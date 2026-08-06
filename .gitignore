@@ -1,0 +1,19 @@
+# Captured personal activity data — never commit
+activity.db
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
