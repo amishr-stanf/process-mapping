@@ -31,6 +31,7 @@ import os
 import signal
 import sqlite3
 import sys
+import threading
 import time
 from ctypes import wintypes
 
@@ -123,7 +124,7 @@ def idle_seconds():
     return (kernel32.GetTickCount() - lii.dwTime) / 1000.0
 
 
-def read_clipboard():
+def read_clipboard(preview_chars=CLIP_PREVIEW_CHARS):
     """
     Inspect the clipboard without mutating it.
 
@@ -166,9 +167,9 @@ def read_clipboard():
 
     digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
     preview = None
-    if CLIP_PREVIEW_CHARS > 0:
+    if preview_chars > 0:
         # Collapse whitespace so previews stay compact and single-line.
-        preview = " ".join(text.split())[:CLIP_PREVIEW_CHARS]
+        preview = " ".join(text.split())[:preview_chars]
     return "text", len(text), digest, preview
 
 
@@ -211,7 +212,70 @@ def log_event(conn, kind, app=None, title=None,
 
 
 # --------------------------------------------------------------------------
-# Main loop
+# Threaded controller (used by app.py to start/stop capture from the UI)
+# --------------------------------------------------------------------------
+class Capture:
+    """Runs the capture loop in a background thread; start/stop on demand."""
+
+    def __init__(self, db_path, preview_chars=CLIP_PREVIEW_CHARS):
+        self.db_path = db_path
+        self.preview_chars = preview_chars
+        self._thread = None
+        self._stop = threading.Event()
+        self.started_at = None
+
+    def is_running(self):
+        return self._thread is not None and self._thread.is_alive()
+
+    def start(self):
+        if self.is_running():
+            return False
+        self._stop.clear()
+        self.started_at = time.time()
+        self._thread = threading.Thread(target=self._run, name="capture", daemon=True)
+        self._thread.start()
+        return True
+
+    def stop(self):
+        if not self.is_running():
+            return False
+        self._stop.set()
+        self._thread.join(timeout=3)
+        return True
+
+    def _run(self):
+        # SQLite connections are thread-affine: open ours inside the thread.
+        conn = open_db(self.db_path)
+        last_focus = (None, None)
+        last_clip_seq = user32.GetClipboardSequenceNumber()
+        is_idle = False
+        try:
+            while not self._stop.is_set():
+                idle = idle_seconds()
+                app, title = get_foreground()
+                if idle >= IDLE_THRESHOLD and not is_idle:
+                    is_idle = True
+                    log_event(conn, "idle_start", app=app, title=title)
+                elif idle < IDLE_THRESHOLD and is_idle:
+                    is_idle = False
+                    log_event(conn, "idle_end", app=app, title=title)
+                if not is_idle and (app, title) != last_focus and (app or title):
+                    last_focus = (app, title)
+                    log_event(conn, "focus", app=app, title=title)
+                seq = user32.GetClipboardSequenceNumber()
+                if seq != last_clip_seq:
+                    last_clip_seq = seq
+                    ctype, clen, chash, cprev = read_clipboard(self.preview_chars)
+                    if ctype is not None:
+                        log_event(conn, "clipboard", app=app, title=title,
+                                  clip_type=ctype, clip_len=clen, clip_hash=chash, clip_preview=cprev)
+                self._stop.wait(POLL_INTERVAL)
+        finally:
+            conn.close()
+
+
+# --------------------------------------------------------------------------
+# Main loop (CLI)
 # --------------------------------------------------------------------------
 def run(db_path, seconds, verbose):
     conn = open_db(db_path)
@@ -259,7 +323,7 @@ def run(db_path, seconds, verbose):
         seq = user32.GetClipboardSequenceNumber()
         if seq != last_clip_seq:
             last_clip_seq = seq
-            ctype, clen, chash, cprev = read_clipboard()
+            ctype, clen, chash, cprev = read_clipboard(CLIP_PREVIEW_CHARS)
             if ctype is not None:
                 log_event(conn, "clipboard", app=app, title=title,
                           clip_type=ctype, clip_len=clen, clip_hash=chash, clip_preview=cprev)

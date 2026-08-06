@@ -1,311 +1,277 @@
 <title>workflow-mapper — activity map</title>
 <!--
-  workflow-mapper UI prototype (Phase design).
-  Self-contained: vanilla JS + SVG, no dependencies. Mock data models the
-  workflows discussed (invoice logging, refund replies, etc.). This is the
-  source for the published Artifact; it also opens directly in a browser.
+  workflow-mapper UI prototype v2.
+  Dark-only. Left half: responsive force graph with real app-logo tiles
+  (inline SVG recreations, no external assets). Right half: summarized
+  flows as insight cards. Bottom: captured workflow chains.
+  Self-contained: vanilla JS + SVG, no dependencies. Mock data.
 -->
 <style>
   :root {
-    --bg:        #0C1018;
-    --surface:   #141A26;
-    --surface-2: #1B2332;
-    --raise:     #222C3E;
-    --line:      #273246;
-    --text:      #E7EBF3;
-    --muted:     #8B98AE;
-    --faint:     #59657C;
-    --accent:    #7C83FF;
-    --accent-2:  #A9AEFF;
-    --accent-soft: rgba(124,131,255,0.14);
-    --auto:      #3FCF8E;
-    --assist:    #E7A94C;
-    --skip:      #7A8699;
-    --shadow:    0 8px 30px rgba(0,0,0,0.45);
+    --bg:        #0B0C10;
+    --panel:     #121520;
+    --panel-2:   #161A26;
+    --card:      #1A1F2D;
+    --card-2:    #1F2536;
+    --line:      #272D3C;
+    --line-2:    #333B4D;
+    --text:      #ECEEF4;
+    --muted:     #98A1B4;
+    --faint:     #626C80;
+    --accent:    #F2C14E;
+    --accent-2:  #FFD98A;
+    --accent-soft: rgba(242,193,78,0.13);
+    --auto:      #37D39A;
+    --assist:    #47B8F3;
+    --skip:      #6B7688;
     --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
-    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --sans: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg:        #EEF1F8;
-      --surface:   #FFFFFF;
-      --surface-2: #F4F6FC;
-      --raise:     #E9EDF6;
-      --line:      #DBE1EE;
-      --text:      #1A2233;
-      --muted:     #5A6579;
-      --faint:     #8E9AAF;
-      --accent:    #565EE6;
-      --accent-2:  #3B44C9;
-      --accent-soft: rgba(86,94,230,0.10);
-      --auto:      #12925E;
-      --assist:    #B0761B;
-      --skip:      #6B7688;
-      --shadow:    0 8px 26px rgba(30,40,70,0.12);
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg:#0C1018; --surface:#141A26; --surface-2:#1B2332; --raise:#222C3E; --line:#273246;
-    --text:#E7EBF3; --muted:#8B98AE; --faint:#59657C; --accent:#7C83FF; --accent-2:#A9AEFF;
-    --accent-soft:rgba(124,131,255,0.14); --auto:#3FCF8E; --assist:#E7A94C; --skip:#7A8699;
-    --shadow:0 8px 30px rgba(0,0,0,0.45);
-  }
-  :root[data-theme="light"] {
-    --bg:#EEF1F8; --surface:#FFFFFF; --surface-2:#F4F6FC; --raise:#E9EDF6; --line:#DBE1EE;
-    --text:#1A2233; --muted:#5A6579; --faint:#8E9AAF; --accent:#565EE6; --accent-2:#3B44C9;
-    --accent-soft:rgba(86,94,230,0.10); --auto:#12925E; --assist:#B0761B; --skip:#6B7688;
-    --shadow:0 8px 26px rgba(30,40,70,0.12);
-  }
-
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    margin: 0; background:
+      radial-gradient(1200px 600px at 20% -10%, rgba(242,193,78,0.05), transparent 60%),
+      var(--bg);
+    color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
+  .num { font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  .eyebrow { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+
   .app {
     display: grid;
-    grid-template-columns: 216px 1fr 348px;
-    grid-template-rows: 56px 1fr 214px;
-    grid-template-areas:
-      "top top top"
-      "rail graph inspect"
-      "drawer drawer drawer";
-    height: 100vh; min-height: 620px;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 58px minmax(0,1fr) 202px;
+    grid-template-areas: "top top" "graph flows" "drawer drawer";
+    height: 100vh; min-height: 640px;
   }
-  .mono { font-family: var(--mono); }
-  .eyebrow {
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: .13em;
-    text-transform: uppercase; color: var(--faint);
-  }
-  .num { font-variant-numeric: tabular-nums; font-family: var(--mono); }
 
-  /* ---- Top bar ---- */
-  .top {
-    grid-area: top; display: flex; align-items: center; gap: 18px;
-    padding: 0 20px; border-bottom: 1px solid var(--line); background: var(--surface);
-  }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .brand .mark {
-    width: 26px; height: 26px; border-radius: 7px;
-    background: linear-gradient(145deg, var(--accent), #4c53d8);
-    box-shadow: 0 0 0 1px var(--line), 0 4px 12px rgba(124,131,255,.35);
-    position: relative;
-  }
-  .brand .mark::after {
-    content:""; position:absolute; inset:7px; border-radius:3px;
-    border:1.5px solid rgba(255,255,255,.9); border-right-color:transparent; border-bottom-color:transparent;
-    transform: rotate(45deg);
-  }
-  .brand b { font-family: var(--mono); font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
-  .brand span { color: var(--faint); font-family: var(--mono); font-size: 12px; }
+  /* Top bar */
+  .top { grid-area: top; display: flex; align-items: center; gap: 16px; padding: 0 22px;
+         border-bottom: 1px solid var(--line); background: rgba(18,21,32,0.7); backdrop-filter: blur(6px); }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .brand .mark { width: 28px; height: 28px; border-radius: 8px; position: relative;
+    background: linear-gradient(150deg, var(--accent-2), #d99a2b);
+    box-shadow: 0 3px 12px rgba(242,193,78,.3), inset 0 0 0 1px rgba(255,255,255,.12); }
+  .brand .mark::after { content:""; position:absolute; inset:8px 8px auto 8px; height:2px; border-radius:2px; background:#3a2c08;
+    box-shadow: 0 4px 0 #3a2c08, 0 8px 0 #3a2c08; }
+  .brand b { font-weight: 650; font-size: 15px; letter-spacing: -.015em; }
+  .brand .sub { color: var(--faint); font-family: var(--mono); font-size: 12px; }
   .top .spacer { flex: 1; }
-  .legend { display: flex; gap: 16px; align-items: center; }
-  .legend .item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-  .legend .swatch { width: 16px; height: 3px; border-radius: 2px; }
-  .live {
-    display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:11.5px; color:var(--muted);
-    padding:5px 10px; border:1px solid var(--line); border-radius:999px; background:var(--surface-2);
-  }
-  .live .dot { width:7px; height:7px; border-radius:50%; background:var(--auto); box-shadow:0 0 0 0 var(--auto); animation: pulse 2.4s infinite; }
-  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(63,207,142,.5)} 70%{box-shadow:0 0 0 6px rgba(63,207,142,0)} 100%{box-shadow:0 0 0 0 rgba(63,207,142,0)} }
-  .theme-btn {
-    font-family:var(--mono); font-size:11.5px; color:var(--muted); background:var(--surface-2);
-    border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer;
-  }
-  .theme-btn:hover { color:var(--text); border-color:var(--accent); }
+  .legend { display: flex; gap: 15px; }
+  .legend .item { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .legend .sw { width: 15px; height: 3px; border-radius: 2px; }
+  .live { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); }
+  .live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--skip); }
+  .live.on .dot { background: var(--auto); animation: pulse 2.4s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(55,211,154,.5)} 70%{box-shadow:0 0 0 6px rgba(55,211,154,0)} 100%{box-shadow:0 0 0 0 rgba(55,211,154,0)} }
+  .capbtn { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 13px; font-weight: 620;
+    color: #1c1206; background: linear-gradient(180deg, var(--accent-2), var(--accent)); border: none; border-radius: 10px;
+    padding: 8px 15px; cursor: pointer; transition: filter .12s; }
+  .capbtn:hover { filter: brightness(1.06); }
+  .capbtn.on { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .capbtn .ic { font-size: 10px; }
 
-  /* ---- Left rail ---- */
-  .rail {
-    grid-area: rail; border-right: 1px solid var(--line); background: var(--surface);
-    display: flex; flex-direction: column; padding: 16px 12px; gap: 6px;
-  }
-  .rail .grp { margin-top: 14px; }
-  .nav {
-    display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px;
-    color: var(--muted); cursor: pointer; font-size: 13.5px;
-  }
-  .nav:hover { background: var(--surface-2); color: var(--text); }
-  .nav.active { background: var(--accent-soft); color: var(--text); }
-  .nav.active .ic { color: var(--accent); }
-  .nav .ic { width: 16px; text-align:center; color: var(--faint); font-family: var(--mono); font-size: 13px; }
-  .rail .foot { margin-top: auto; }
-  .capture {
-    border: 1px solid var(--line); border-radius: 11px; padding: 12px; background: var(--surface-2);
-  }
-  .capture .row { display:flex; justify-content:space-between; align-items:baseline; margin-top:7px; }
-  .capture .row .v { font-family:var(--mono); font-size:13px; }
+  #liveReal { border: 1px solid var(--line); border-radius: 14px; background:
+      linear-gradient(180deg, var(--card-2), var(--card)); padding: 15px 16px; margin-bottom: 18px; }
+  #liveReal .lr-top { display: flex; align-items: center; justify-content: space-between; }
+  #liveReal .lr-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 13px; }
+  #liveReal .lr-stats .k { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  #liveReal .lr-stats .v { font-family: var(--mono); font-size: 19px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  #liveReal .lr-recent { display: flex; flex-direction: column; gap: 5px; }
+  #liveReal .lr-ev { display: grid; grid-template-columns: 58px 66px 1fr; gap: 9px; font-family: var(--mono); font-size: 11px; align-items: baseline; }
+  #liveReal .lr-ev .k2 { color: var(--accent); }
+  #liveReal .lr-ev .t2 { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #liveReal .lr-ev .d2 { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #liveReal code { font-family: var(--mono); color: var(--accent-2); background: var(--panel-2); padding: 2px 7px; border-radius: 6px; }
 
-  /* ---- Graph ---- */
-  .graph { grid-area: graph; position: relative; overflow: hidden; }
-  .graph svg { width: 100%; height: 100%; display: block; }
-  .graph .hint {
-    position: absolute; left: 16px; bottom: 14px; font-family: var(--mono);
-    font-size: 11px; color: var(--faint); pointer-events: none;
-  }
+  /* Graph */
+  .graph { grid-area: graph; position: relative; overflow: hidden; border-right: 1px solid var(--line); }
+  .graph svg.stage { width: 100%; height: 100%; display: block; }
+  .graph .hint { position: absolute; left: 18px; bottom: 14px; font-family: var(--mono); font-size: 11px;
+    color: var(--faint); pointer-events: none; }
   .edge-hit { stroke: transparent; fill: none; cursor: pointer; }
-  .edge-vis { fill: none; stroke-linecap: round; transition: stroke-opacity .15s, stroke-width .15s; pointer-events:none; }
+  .edge-vis { fill: none; stroke-linecap: round; transition: stroke-opacity .16s, stroke-width .16s; pointer-events: none; }
   .node-g { cursor: pointer; }
-  .node-ring { transition: stroke .15s, filter .15s; }
-  .node-label { font-family: var(--mono); font-size: 12px; fill: var(--muted); text-anchor: middle; pointer-events:none; }
-  .node-mono { font-family: var(--mono); font-weight: 600; font-size: 14px; fill: var(--text); text-anchor: middle; dominant-baseline: central; pointer-events:none; }
-  .flow-dot { fill: #fff; pointer-events: none; }
+  .node-ring { fill: none; stroke: transparent; stroke-width: 2; transition: stroke .16s; }
+  .node-label { font-family: var(--mono); font-size: 11.5px; fill: var(--muted); text-anchor: middle; pointer-events: none; }
+  .flow-dot { fill: var(--accent-2); pointer-events: none; }
 
-  /* ---- Inspector ---- */
-  .inspect {
-    grid-area: inspect; border-left: 1px solid var(--line); background: var(--surface);
-    overflow-y: auto; padding: 18px 18px 24px;
-  }
-  .inspect::-webkit-scrollbar { width: 9px; }
-  .inspect::-webkit-scrollbar-thumb { background: var(--line); border-radius: 9px; }
-  .ins-title { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin: 6px 0 2px; text-wrap: balance; }
-  .ins-sub { color: var(--muted); font-size: 12.5px; font-family: var(--mono); }
-  .chip {
-    display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px;
-    padding:3px 9px; border-radius:999px; border:1px solid transparent; letter-spacing:.02em;
-  }
-  .chip.auto   { color:var(--auto);   background:color-mix(in srgb, var(--auto) 14%, transparent);   border-color:color-mix(in srgb, var(--auto) 35%, transparent); }
-  .chip.assist { color:var(--assist); background:color-mix(in srgb, var(--assist) 14%, transparent); border-color:color-mix(in srgb, var(--assist) 35%, transparent); }
-  .chip.skip   { color:var(--skip);   background:color-mix(in srgb, var(--skip) 16%, transparent);   border-color:color-mix(in srgb, var(--skip) 38%, transparent); }
-  .chip .d { width:6px; height:6px; border-radius:50%; background:currentColor; }
+  /* Right: summarized flows */
+  .flows { grid-area: flows; background: var(--panel); overflow-y: auto; padding: 20px 20px 26px; }
+  .flows::-webkit-scrollbar, .drawer .track::-webkit-scrollbar { width: 9px; height: 9px; }
+  .flows::-webkit-scrollbar-thumb, .drawer .track::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 9px; }
 
-  .stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }
-  .stat { border:1px solid var(--line); border-radius:11px; padding:12px; background:var(--surface-2); }
-  .stat .k { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); }
-  .stat .v { font-family:var(--mono); font-size:22px; margin-top:5px; font-variant-numeric:tabular-nums; }
-  .stat .v small { font-size:12px; color:var(--muted); }
+  .focus { border: 1px solid var(--line); border-radius: 16px; background:
+      linear-gradient(180deg, var(--card-2), var(--card)); padding: 18px; margin-bottom: 22px; }
+  .focus .flabel { display: flex; align-items: center; justify-content: space-between; }
+  .focus h2 { margin: 10px 0 3px; font-size: 20px; letter-spacing: -.02em; text-wrap: balance; }
+  .focus .fsub { color: var(--muted); font-size: 12.5px; font-family: var(--mono); }
+  .statrow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .stat .k { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .stat .v { font-family: var(--mono); font-size: 26px; margin-top: 4px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .stat .v small { font-size: 12px; color: var(--muted); letter-spacing: 0; }
 
-  .sec-label { margin: 20px 0 10px; }
-  .rank { display:flex; flex-direction:column; gap:2px; }
-  .rank .r {
-    display:grid; grid-template-columns: 1fr auto; align-items:center; gap:10px;
-    padding:9px 10px; border-radius:9px; cursor:pointer; border:1px solid transparent;
-  }
-  .rank .r:hover { background:var(--surface-2); border-color:var(--line); }
-  .rank .r .nm { font-size:13px; }
-  .rank .r .meta { font-family:var(--mono); font-size:11px; color:var(--muted); }
-  .bar { height:5px; border-radius:3px; background:var(--raise); margin-top:6px; overflow:hidden; grid-column:1/-1; }
-  .bar > i { display:block; height:100%; border-radius:3px; background:var(--accent); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px;
+    padding: 4px 10px; border-radius: 999px; letter-spacing: .02em; border: 1px solid transparent; white-space: nowrap; }
+  .pill .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pill.auto   { color: var(--auto);   background: color-mix(in srgb, var(--auto) 13%, transparent);   border-color: color-mix(in srgb, var(--auto) 34%, transparent); }
+  .pill.assist { color: var(--assist); background: color-mix(in srgb, var(--assist) 13%, transparent); border-color: color-mix(in srgb, var(--assist) 34%, transparent); }
+  .pill.skip   { color: var(--skip);   background: color-mix(in srgb, var(--skip) 16%, transparent);   border-color: color-mix(in srgb, var(--skip) 38%, transparent); }
 
-  .flowsteps { display:flex; flex-direction:column; gap:0; margin-top:8px; }
-  .step { display:grid; grid-template-columns: 34px 1fr; gap:12px; position:relative; padding-bottom:18px; }
-  .step:not(:last-child)::before { content:""; position:absolute; left:16px; top:30px; bottom:0; width:2px; background:var(--line); }
-  .step .badge {
-    width:34px; height:34px; border-radius:9px; display:grid; place-items:center;
-    font-family:var(--mono); font-weight:600; font-size:12px; background:var(--surface-2);
-    border:1px solid var(--line); color:var(--text); z-index:1;
-  }
-  .step .body .an { font-size:13px; }
-  .step .body .via { font-family:var(--mono); font-size:11px; color:var(--faint); margin-top:2px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .via .pv { color:var(--accent-2); background:var(--accent-soft); padding:1px 7px; border-radius:6px; }
+  .feed-head { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 12px; }
+  .feed-head h3 { margin: 0; font-size: 13px; font-family: var(--mono); font-weight: 600; letter-spacing: .02em; }
+  .feed-head .c { color: var(--faint); font-family: var(--mono); font-size: 12px; }
 
-  .instances { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
-  .inst { display:flex; justify-content:space-between; align-items:center; gap:10px;
-    border:1px solid var(--line); border-radius:9px; padding:9px 11px; background:var(--surface-2); }
-  .inst .t { font-family:var(--mono); font-size:11px; color:var(--muted); }
-  .inst .p { font-family:var(--mono); font-size:12px; color:var(--accent-2); }
-  .link { color:var(--accent); cursor:pointer; font-family:var(--mono); font-size:12px; }
-  .link:hover { text-decoration:underline; }
-  .cta {
-    margin-top:16px; width:100%; text-align:left; display:flex; align-items:center; gap:10px;
-    padding:12px 14px; border-radius:11px; cursor:pointer; font-family:var(--sans); font-size:13.5px;
-    color:var(--text); background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  }
-  .cta:hover { border-color:var(--accent); }
-  .cta .arrow { margin-left:auto; color:var(--accent); font-family:var(--mono); }
-  .muted-note { color:var(--faint); font-size:12px; margin-top:14px; }
+  .flow { border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 15px 16px; margin-bottom: 12px;
+    cursor: pointer; transition: border-color .15s, transform .1s, background .15s; }
+  .flow:hover { border-color: var(--line-2); transform: translateY(-1px); }
+  .flow.active { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: var(--card-2);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent), 0 10px 30px rgba(0,0,0,.35); }
+  .flow .r1 { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; }
+  .flow .rk { font-family: var(--mono); font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums;
+    width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 8px; background: var(--accent-soft); }
+  .flow .nm { font-size: 15px; font-weight: 620; letter-spacing: -.01em; }
+  .flow .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .meter { display: flex; align-items: center; gap: 10px; margin: 13px 0 12px; }
+  .meter .track2 { flex: 1; height: 6px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+  .meter .track2 > i { display: block; height: 100%; border-radius: 4px; }
+  .meter .mv { font-family: var(--mono); font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .meter .mv small { color: var(--muted); }
+  .fchain { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .logo { display: block; }
+  .fchain .sep { color: var(--faint); font-family: var(--mono); font-size: 12px; margin: 0 1px; }
 
-  /* ---- Bottom drawer ---- */
-  .drawer { grid-area: drawer; border-top:1px solid var(--line); background:var(--surface); display:flex; flex-direction:column; }
-  .drawer .head { display:flex; align-items:center; gap:12px; padding:12px 20px 8px; }
-  .drawer .head h3 { margin:0; font-size:13px; font-family:var(--mono); font-weight:600; letter-spacing:.02em; }
-  .drawer .head .count { color:var(--faint); font-family:var(--mono); font-size:12px; }
-  .track { display:flex; gap:12px; overflow-x:auto; padding:4px 20px 16px; }
-  .track::-webkit-scrollbar { height:9px; }
-  .track::-webkit-scrollbar-thumb { background:var(--line); border-radius:9px; }
-  .wf {
-    min-width:264px; border:1px solid var(--line); border-radius:12px; background:var(--surface-2);
-    padding:13px 14px; cursor:pointer; transition:border-color .15s, transform .1s; flex:0 0 auto;
-  }
-  .wf:hover { border-color:var(--accent); transform:translateY(-2px); }
-  .wf.active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), var(--shadow); }
-  .wf .r1 { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .wf .nm { font-size:14px; font-weight:600; }
-  .wf .metrics { display:flex; gap:14px; margin:10px 0 12px; }
-  .wf .metrics .m .k { font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); }
-  .wf .metrics .m .v { font-family:var(--mono); font-size:14px; font-variant-numeric:tabular-nums; margin-top:2px; }
-  .chain { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
-  .chain .a {
-    width:26px; height:26px; border-radius:7px; display:grid; place-items:center;
-    font-family:var(--mono); font-size:10.5px; font-weight:600; background:var(--raise);
-    border:1px solid var(--line);
-  }
-  .chain .sep { color:var(--faint); font-family:var(--mono); font-size:12px; }
+  /* focus detail bits */
+  .steps { display: flex; flex-direction: column; margin-top: 6px; }
+  .step { display: grid; grid-template-columns: 30px 1fr; gap: 12px; position: relative; padding-bottom: 16px; }
+  .step:not(:last-child)::before { content:""; position:absolute; left:14px; top:32px; bottom:0; width:2px; background:var(--line); }
+  .step .badge { width: 30px; height: 30px; border-radius: 8px; overflow: hidden; z-index: 1; border: 1px solid var(--line); }
+  .step .an { font-size: 13px; }
+  .step .an b { font-weight: 620; }
+  .step .via { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .via .pv { color: #1c1206; background: var(--accent-2); padding: 1px 7px; border-radius: 6px; font-weight: 600; }
+  .instances { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .inst { display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 1px solid var(--line);
+    border-radius: 9px; padding: 9px 11px; background: var(--panel-2); }
+  .inst .t { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .inst .p { font-family: var(--mono); font-size: 12px; color: var(--accent-2); }
+  .cta { margin-top: 15px; width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border-radius: 12px; cursor: pointer; font-family: var(--sans); font-size: 13.5px; color: #1c1206; font-weight: 600;
+    background: linear-gradient(180deg, var(--accent-2), var(--accent)); border: none; }
+  .cta:hover { filter: brightness(1.05); }
+  .cta .arrow { margin-left: auto; }
+  .note { color: var(--faint); font-size: 12px; margin-top: 13px; }
+  .backlink { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; color: var(--accent); cursor: pointer;
+    font-family: var(--mono); font-size: 12px; }
+  .backlink:hover { text-decoration: underline; }
 
-  @media (max-width: 1080px) {
-    .app { grid-template-columns: 1fr 320px; grid-template-areas:"top top" "graph inspect" "drawer drawer"; }
-    .rail { display:none; }
+  /* Bottom drawer */
+  .drawer { grid-area: drawer; border-top: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
+  .drawer .head { display: flex; align-items: center; gap: 12px; padding: 13px 22px 8px; }
+  .drawer .head h3 { margin: 0; font-size: 13px; font-family: var(--mono); font-weight: 600; letter-spacing: .02em; }
+  .drawer .head .c { color: var(--faint); font-family: var(--mono); font-size: 12px; }
+  .track { display: flex; gap: 12px; overflow-x: auto; padding: 4px 22px 16px; }
+  .wf { min-width: 256px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 13px; background: var(--card);
+    padding: 13px 15px; cursor: pointer; transition: border-color .15s, transform .1s; }
+  .wf:hover { border-color: var(--line-2); transform: translateY(-2px); }
+  .wf.active { border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+  .wf .r1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .wf .nm { font-size: 14px; font-weight: 620; }
+  .wf .metrics { display: flex; gap: 16px; margin: 11px 0 12px; }
+  .wf .metrics .k { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .wf .metrics .v { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+  @media (max-width: 980px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 58px 46vh minmax(0,1fr) 190px;
+           grid-template-areas: "top" "graph" "flows" "drawer"; }
+    .graph { border-right: none; border-bottom: 1px solid var(--line); }
+    .legend { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { .live .dot { animation:none; } }
 </style>
 
+<!-- Master logo symbols (referenced by <use> everywhere) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="lg-gmail" viewBox="0 0 48 48">
+      <rect x="4" y="4" width="40" height="40" rx="10" fill="#EA4335"/>
+      <path d="M11 15v18h4V22l9 7 9-7v11h4V15l-13 10z" fill="#fff"/>
+    </symbol>
+    <symbol id="lg-excel" viewBox="0 0 48 48">
+      <rect x="4" y="4" width="40" height="40" rx="10" fill="#1D7C43"/>
+      <path d="M17 16l14 16M31 16L17 32" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="lg-word" viewBox="0 0 48 48">
+      <rect x="4" y="4" width="40" height="40" rx="10" fill="#2B579A"/>
+      <path d="M13 16l5 16 6-11 6 11 5-16" fill="none" stroke="#fff" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="lg-outlook" viewBox="0 0 48 48">
+      <rect x="4" y="4" width="40" height="40" rx="10" fill="#0F6CBD"/>
+      <rect x="23" y="17" width="17" height="14" rx="2" fill="#fff"/>
+      <path d="M23 19l8.5 5.5L40 19" fill="none" stroke="#0F6CBD" stroke-width="2"/>
+      <ellipse cx="17" cy="24" rx="7.5" ry="8.5" fill="none" stroke="#fff" stroke-width="3.4"/>
+    </symbol>
+    <symbol id="lg-slack" viewBox="0 0 48 48">
+      <rect x="4" y="4" width="40" height="40" rx="10" fill="#1A1D24"/>
+      <rect x="21.5" y="9"  width="5.4" height="15" rx="2.7" fill="#36C5F0"/>
+      <rect x="24"   y="21.5" width="15" height="5.4" rx="2.7" fill="#2EB67D"/>
+      <rect x="21.1" y="24" width="5.4" height="15" rx="2.7" fill="#ECB22E"/>
+      <rect x="9"    y="21.1" width="15" height="5.4" rx="2.7" fill="#E01E5A"/>
+    </symbol>
+    <symbol id="lg-chrome" viewBox="0 0 48 48">
+      <rect x="4" y="4" width="40" height="40" rx="10" fill="#1A1D24"/>
+      <path d="M24 24 L11.01 16.5 A15 15 0 0 1 36.99 16.5 Z" fill="#EA4335"/>
+      <path d="M24 24 L36.99 16.5 A15 15 0 0 1 24 39 Z" fill="#FBBC05"/>
+      <path d="M24 24 L24 39 A15 15 0 0 1 11.01 16.5 Z" fill="#34A853"/>
+      <circle cx="24" cy="24" r="7.6" fill="#fff"/>
+      <circle cx="24" cy="24" r="5.1" fill="#4285F4"/>
+    </symbol>
+    <symbol id="lg-files" viewBox="0 0 48 48">
+      <rect x="4" y="4" width="40" height="40" rx="10" fill="#1A1D24"/>
+      <path d="M11 18h9l3 3h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2V20a2 2 0 0 1 2-2z" fill="#EAB040"/>
+      <path d="M9 24h30v11a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2z" fill="#FBD277"/>
+    </symbol>
+    <symbol id="lg-orders" viewBox="0 0 48 48">
+      <rect x="4" y="4" width="40" height="40" rx="10" fill="#F2C14E"/>
+      <g stroke="#3A2C0B" stroke-width="2.6" stroke-linecap="round">
+        <path d="M15 18h18M15 24h18M15 30h12"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
 <div class="app">
-  <!-- Top bar -->
   <header class="top">
-    <div class="brand">
-      <div class="mark"></div>
-      <b>workflow-mapper</b>
-      <span>· activity map · this week</span>
-    </div>
+    <div class="brand"><div class="mark"></div><b>workflow-mapper</b><span class="sub">· activity map</span></div>
     <div class="spacer"></div>
-    <div class="legend" aria-hidden="true">
-      <div class="item"><span class="swatch" style="background:var(--auto)"></span>Automatable</div>
-      <div class="item"><span class="swatch" style="background:var(--assist)"></span>Assist / draft</div>
-      <div class="item"><span class="swatch" style="background:var(--skip)"></span>Manual</div>
+    <div class="legend">
+      <div class="item"><span class="sw" style="background:var(--auto)"></span>Automatable</div>
+      <div class="item"><span class="sw" style="background:var(--assist)"></span>Assist / draft</div>
+      <div class="item"><span class="sw" style="background:var(--skip)"></span>Manual</div>
     </div>
-    <button class="theme-btn" id="themeBtn" type="button">◐ theme</button>
-    <div class="live"><span class="dot"></span>capturing · 3,412 events today</div>
+    <button class="capbtn" id="capBtn" type="button"><span class="ic">▶</span><span id="capLabel">Start mapping</span></button>
+    <div class="live" id="livePill"><span class="dot"></span><span id="liveText">demo data</span></div>
   </header>
 
-  <!-- Left rail -->
-  <aside class="rail">
-    <div class="eyebrow" style="padding:2px 8px 4px">Views</div>
-    <div class="nav active"><span class="ic">◇</span>App map</div>
-    <div class="nav"><span class="ic">≡</span>Timeline</div>
-    <div class="nav"><span class="ic">⇉</span>Workflows</div>
-    <div class="nav"><span class="ic">✦</span>Automations</div>
-
-    <div class="grp eyebrow" style="padding:2px 8px 4px">Filter</div>
-    <div class="nav"><span class="ic">◷</span>Last 7 days</div>
-    <div class="nav"><span class="ic">◨</span>All apps</div>
-
-    <div class="foot">
-      <div class="capture">
-        <div class="eyebrow">Capture status</div>
-        <div class="row"><span style="color:var(--muted);font-size:12px">Logger</span><span class="v" style="color:var(--auto)">● running</span></div>
-        <div class="row"><span style="color:var(--muted);font-size:12px">Apps seen</span><span class="v">8</span></div>
-        <div class="row"><span style="color:var(--muted);font-size:12px">Hand-offs</span><span class="v">96</span></div>
-      </div>
-    </div>
-  </aside>
-
-  <!-- Graph -->
   <section class="graph">
-    <svg id="svg" viewBox="0 0 960 640" preserveAspectRatio="xMidYMid meet" role="img" aria-label="App relationship graph"></svg>
-    <div class="hint">drag nodes · click an edge to inspect a hand-off · click a workflow below to trace it</div>
+    <svg class="stage" id="svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="App relationship graph"></svg>
+    <div class="hint">drag tiles · click an edge to see the hand-off · click a flow to trace it</div>
   </section>
 
-  <!-- Inspector -->
-  <aside class="inspect" id="inspect"></aside>
+  <aside class="flows">
+    <div id="liveReal" style="display:none"></div>
+    <div id="focus"></div>
+    <div class="feed-head"><h3>Task streams</h3><span class="c" id="feedCount"></span><span style="flex:1"></span><span class="eyebrow">by total time</span></div>
+    <div id="feed"></div>
+  </aside>
 
-  <!-- Bottom drawer -->
   <section class="drawer">
-    <div class="head">
-      <h3>Captured workflows</h3>
-      <span class="count" id="wfCount"></span>
-      <span style="flex:1"></span>
-      <span class="eyebrow">click to trace on map →</span>
-    </div>
+    <div class="head"><h3>Captured workflows</h3><span class="c" id="wfCount"></span>
+      <span style="flex:1"></span><span class="eyebrow">click to trace on map →</span></div>
     <div class="track" id="track"></div>
   </section>
 </div>
@@ -316,419 +282,375 @@
   const NS = "http://www.w3.org/2000/svg";
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // ---- Data -------------------------------------------------------------
   const APPS = {
-    gmail:  { name: "Gmail",    mono: "GM", kind: "Mail" },
-    excel:  { name: "Excel",    mono: "XL", kind: "Spreadsheet" },
-    slack:  { name: "Slack",    mono: "SL", kind: "Chat" },
-    orders: { name: "Orders",   mono: "OR", kind: "Internal tool" },
-    chrome: { name: "Chrome",   mono: "CR", kind: "Browser" },
-    word:   { name: "Word",     mono: "WD", kind: "Docs" },
-    outlook:{ name: "Outlook",  mono: "OL", kind: "Calendar" },
-    files:  { name: "Explorer", mono: "FE", kind: "Files" },
+    gmail:  { name: "Gmail",    kind: "Mail" },
+    excel:  { name: "Excel",    kind: "Spreadsheet" },
+    slack:  { name: "Slack",    kind: "Chat" },
+    orders: { name: "Orders",   kind: "Internal tool" },
+    chrome: { name: "Chrome",   kind: "Browser" },
+    word:   { name: "Word",     kind: "Docs" },
+    outlook:{ name: "Outlook",  kind: "Calendar" },
+    files:  { name: "Explorer", kind: "Files" },
   };
+  const logo = (id, s) => `<svg class="logo" width="${s}" height="${s}" viewBox="0 0 48 48"><use href="#lg-${id}"></use></svg>`;
 
   const WORKFLOWS = [
     { id:"invoice", name:"Log invoice", auto:"auto", perWeek:30, minEach:4, freq:"6×/day",
-      trigger:"An invoice email arrives",
-      steps:[
+      trigger:"An invoice email arrives", steps:[
         { app:"gmail",  action:"Open invoice email, copy the amount", via:"clipboard", sample:"$4,821.00" },
         { app:"excel",  action:"Paste into a new row, save the ledger", via:"clipboard" },
-        { app:"slack",  action:"Post confirmation in #finance", via:"typed", sample:"Logged inv #4821 ✓" },
-      ] },
+        { app:"slack",  action:"Post confirmation in #finance", via:"typed", sample:"Logged inv #4821 ✓" } ] },
     { id:"refund", name:"Reply to refund-status question", auto:"auto", perWeek:5, minEach:6, freq:"5×/wk",
-      trigger:"Customer email matching “refund” + order #",
-      steps:[
+      trigger:"Customer email matching “refund” + order #", steps:[
         { app:"gmail",  action:"Read request, copy the order number", via:"clipboard", sample:"#4821" },
         { app:"orders", action:"Look up order, read the status", via:"typed" },
-        { app:"gmail",  action:"Reply with the status template", via:"typed", sample:"Your refund is processing…" },
-      ] },
+        { app:"gmail",  action:"Reply with the status template", via:"typed", sample:"Your refund is processing…" } ] },
     { id:"metrics", name:"Post weekly metrics", auto:"auto", perWeek:1, minEach:8, freq:"1×/wk",
-      trigger:"Friday, before standup",
-      steps:[
+      trigger:"Friday, before standup", steps:[
         { app:"excel",  action:"Copy the KPI chart range", via:"clipboard", sample:"[chart] Wk 31" },
-        { app:"slack",  action:"Paste into #leadership with a note", via:"clipboard" },
-      ] },
+        { app:"slack",  action:"Paste into #leadership with a note", via:"clipboard" } ] },
     { id:"triage", name:"Triage a new file", auto:"assist", perWeek:15, minEach:5, freq:"3×/day",
-      trigger:"A file lands in \\Downloads",
-      steps:[
+      trigger:"A file lands in \\Downloads", steps:[
         { app:"files",  action:"Open the new file, check contents", via:"open" },
         { app:"excel",  action:"Log it in the tracker", via:"typed" },
-        { app:"outlook",action:"Email the owner for confirmation", via:"typed", sample:"Received — confirming…" },
-      ] },
+        { app:"outlook",action:"Email the owner for confirmation", via:"typed", sample:"Received — confirming…" } ] },
     { id:"schedule", name:"Schedule a meeting", auto:"assist", perWeek:20, minEach:3, freq:"4×/day",
-      trigger:"A “can we meet?” email",
-      steps:[
+      trigger:"A “can we meet?” email", steps:[
         { app:"outlook",action:"Find an open slot in the calendar", via:"open" },
-        { app:"gmail",  action:"Send times / an invite", via:"typed", sample:"How about Tue 2pm?" },
-      ] },
+        { app:"gmail",  action:"Send times / an invite", via:"typed", sample:"How about Tue 2pm?" } ] },
     { id:"research", name:"Research a company", auto:"assist", perWeek:4, minEach:22, freq:"4×/wk",
-      trigger:"Ad-hoc — before a call",
-      steps:[
+      trigger:"Ad-hoc — before a call", steps:[
         { app:"chrome", action:"Gather across ~8 tabs (site, news, filings)", via:"open" },
-        { app:"word",   action:"Write up a one-page brief", via:"typed" },
-      ] },
+        { app:"word",   action:"Write up a one-page brief", via:"typed" } ] },
   ];
 
   const AUTO_LABEL = { auto:"Automatable", assist:"Assist / draft", skip:"Manual" };
   const AUTO_VAR   = { auto:"var(--auto)", assist:"var(--assist)", skip:"var(--skip)" };
   const VIA_LABEL  = { clipboard:"clipboard", typed:"typed", open:"opened" };
 
-  // Derive edges (aggregated hand-offs) from consecutive workflow steps.
+  // Derive edges from consecutive steps
   const edgeMap = new Map();
   WORKFLOWS.forEach(wf => {
     for (let i = 0; i < wf.steps.length - 1; i++) {
-      const a = wf.steps[i], b = wf.steps[i+1];
-      if (a.app === b.app) continue;
+      const a = wf.steps[i], b = wf.steps[i+1]; if (a.app === b.app) continue;
       const key = a.app + ">" + b.app;
       if (!edgeMap.has(key)) edgeMap.set(key, { from:a.app, to:b.app, volume:0, parts:[] });
-      const e = edgeMap.get(key);
-      e.volume += wf.perWeek;
+      const e = edgeMap.get(key); e.volume += wf.perWeek;
       e.parts.push({ wf, action:a.action, via:a.via, sample:a.sample });
     }
   });
   const EDGES = [...edgeMap.values()];
-  EDGES.forEach(e => {
-    // dominant category = the highest-volume contributing workflow
-    e.parts.sort((x,y) => y.wf.perWeek - x.wf.perWeek);
-    e.auto = e.parts[0].wf.auto;
-  });
+  EDGES.forEach(e => { e.parts.sort((x,y)=>y.wf.perWeek-x.wf.perWeek); e.auto = e.parts[0].wf.auto; });
+  const activity = {}; Object.keys(APPS).forEach(k=>activity[k]=0);
+  EDGES.forEach(e => { activity[e.from]+=e.volume; activity[e.to]+=e.volume; });
+  const maxVol = Math.max(...EDGES.map(e=>e.volume));
 
-  // Node activity = sum of volumes touching it.
-  const activity = {};
-  Object.keys(APPS).forEach(k => activity[k] = 0);
-  EDGES.forEach(e => { activity[e.from] += e.volume; activity[e.to] += e.volume; });
-  const maxAct = Math.max(...Object.values(activity));
-  const maxVol = Math.max(...EDGES.map(e => e.volume));
+  // ---- Responsive layout / force sim -----------------------------------
+  const graphEl = document.querySelector(".graph");
+  const svg = document.getElementById("svg");
+  let W=800, H=520, CX=400, CY=260;
+  const TILE = 50, RSPACE = 40;
 
-  // ---- Layout (force sim in 960x640 space) ------------------------------
-  const W = 960, H = 640, CX = W/2, CY = H/2 - 10;
-  const nodes = Object.keys(APPS).map((id, i, arr) => {
-    const ang = (i / arr.length) * Math.PI * 2 - Math.PI/2;
-    return { id, x: CX + Math.cos(ang)*200, y: CY + Math.sin(ang)*150, vx:0, vy:0,
-             r: 20 + (activity[id]/maxAct)*16, fixed:false };
+  function measure() {
+    const r = graphEl.getBoundingClientRect();
+    W = Math.max(320, r.width); H = Math.max(260, r.height); CX = W/2; CY = H/2;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  }
+
+  const ids = Object.keys(APPS);
+  const nodes = ids.map((id,i) => {
+    const ang = (i/ids.length)*Math.PI*2 - Math.PI/2;
+    return { id, x: CX+Math.cos(ang)*Math.min(W,H)*0.3, y: CY+Math.sin(ang)*Math.min(W,H)*0.3, vx:0, vy:0, fixed:false };
   });
-  const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
+  const nodeById = Object.fromEntries(nodes.map(n=>[n.id,n]));
 
   function tick() {
     for (let i=0;i<nodes.length;i++) for (let j=i+1;j<nodes.length;j++) {
-      const a=nodes[i], b=nodes[j];
-      let dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy || 0.01, d=Math.sqrt(d2);
-      const f = 42000 / d2, fx=(dx/d)*f, fy=(dy/d)*f;
-      a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy;
+      const a=nodes[i], b=nodes[j]; let dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy||0.01, d=Math.sqrt(d2);
+      const f=Math.min(2.4, 26000/d2), fx=(dx/d)*f, fy=(dy/d)*f; a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy;
     }
-    EDGES.forEach(e => {
-      const a=nodeById[e.from], b=nodeById[e.to];
-      let dx=b.x-a.x, dy=b.y-a.y, d=Math.sqrt(dx*dx+dy*dy)||0.01;
-      const L=210, f=(d-L)*0.015, fx=(dx/d)*f, fy=(dy/d)*f;
-      a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy;
-    });
-    nodes.forEach(n => {
-      n.vx += (CX-n.x)*0.004; n.vy += (CY-n.y)*0.004;
-      if (n.fixed) { n.vx=0; n.vy=0; return; }
-      n.vx*=0.82; n.vy*=0.82;
-      n.x+=n.vx; n.y+=n.vy;
-      n.x=Math.max(n.r+30, Math.min(W-n.r-30, n.x));
-      n.y=Math.max(n.r+28, Math.min(H-n.r-24, n.y));
-    });
+    const L = Math.min(W,H)*0.32;
+    EDGES.forEach(e => { const a=nodeById[e.from], b=nodeById[e.to];
+      let dx=b.x-a.x, dy=b.y-a.y, d=Math.sqrt(dx*dx+dy*dy)||0.01, f=(d-L)*0.02, fx=(dx/d)*f, fy=(dy/d)*f;
+      a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy; });
+    nodes.forEach(n => { n.vx+=(CX-n.x)*0.006; n.vy+=(CY-n.y)*0.006;
+      if (n.fixed){ n.vx=0; n.vy=0; return; }
+      n.vx*=0.8; n.vy*=0.8; n.x+=n.vx; n.y+=n.vy;
+      const m = TILE/2 + RSPACE;
+      n.x=Math.max(m, Math.min(W-m, n.x)); n.y=Math.max(m, Math.min(H-m-14, n.y)); });
   }
+  function clampNodes(){ const m=TILE/2+RSPACE; nodes.forEach(n=>{ n.x=Math.max(m,Math.min(W-m,n.x)); n.y=Math.max(m,Math.min(H-m-14,n.y)); }); }
+
+  measure();
+  nodes.forEach((n,i)=>{ const ang=(i/ids.length)*Math.PI*2-Math.PI/2; n.x=CX+Math.cos(ang)*Math.min(W,H)*0.3; n.y=CY+Math.sin(ang)*Math.min(W,H)*0.3; });
   for (let i=0;i<520;i++) tick();
 
-  // ---- Render graph -----------------------------------------------------
-  const svg = document.getElementById("svg");
-  function el(tag, attrs) { const e=document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
-
-  // defs: soft glow
-  const defs = el("defs", {});
-  defs.innerHTML = '<filter id="glow" x="-60%" y="-60%" width="220%" height="220%">' +
-    '<feGaussianBlur stdDeviation="4.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+  // ---- SVG build --------------------------------------------------------
+  const defs = document.createElementNS(NS,"defs");
+  defs.innerHTML = '<filter id="ndrop" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.45"/></filter>' +
+    '<filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
   svg.appendChild(defs);
+  const gEdges=document.createElementNS(NS,"g"), gFlow=document.createElementNS(NS,"g"), gNodes=document.createElementNS(NS,"g");
+  svg.appendChild(gEdges); svg.appendChild(gFlow); svg.appendChild(gNodes);
+  const el=(t,a)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); return e; };
 
-  const gEdges = el("g", {}); svg.appendChild(gEdges);
-  const gFlow  = el("g", {}); svg.appendChild(gFlow);
-  const gNodes = el("g", {}); svg.appendChild(gNodes);
-
-  function edgePath(e) {
-    const a=nodeById[e.from], b=nodeById[e.to];
-    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
-    const dx=b.x-a.x, dy=b.y-a.y, len=Math.sqrt(dx*dx+dy*dy)||1;
-    const nx=-dy/len, ny=dx/len, bow=26;
-    return { d:`M ${a.x} ${a.y} Q ${mx+nx*bow} ${my+ny*bow} ${b.x} ${b.y}`, cx:mx+nx*bow*0.5, cy:my+ny*bow*0.5 };
-  }
+  function edgePath(e){ const a=nodeById[e.from], b=nodeById[e.to];
+    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2, dx=b.x-a.x, dy=b.y-a.y, len=Math.sqrt(dx*dx+dy*dy)||1, nx=-dy/len, ny=dx/len, bow=24;
+    return `M ${a.x} ${a.y} Q ${mx+nx*bow} ${my+ny*bow} ${b.x} ${b.y}`; }
 
   const edgeEls = EDGES.map(e => {
-    const p = edgePath(e);
-    const hit = el("path", { class:"edge-hit", d:p.d, "stroke-width":16 });
-    const vis = el("path", { class:"edge-vis", d:p.d,
-      stroke:AUTO_VAR[e.auto], "stroke-width":(1.6+(e.volume/maxVol)*7).toFixed(1), "stroke-opacity":0.34 });
-    hit.addEventListener("click", () => selectEdge(e));
-    hit.addEventListener("mouseenter", () => { if (!isSel(e)) vis.setAttribute("stroke-opacity", 0.7); });
-    hit.addEventListener("mouseleave", () => { if (!isSel(e)) vis.setAttribute("stroke-opacity", 0.34); });
+    const d=edgePath(e);
+    const hit=el("path",{class:"edge-hit",d,"stroke-width":16});
+    const vis=el("path",{class:"edge-vis",d,stroke:AUTO_VAR[e.auto],"stroke-width":(1.6+(e.volume/maxVol)*7).toFixed(1),"stroke-opacity":0.32});
+    hit.addEventListener("click",()=>selectEdge(e));
+    hit.addEventListener("mouseenter",()=>{ if(!(selType==="edge"&&selEdge===e)) vis.setAttribute("stroke-opacity",0.65); });
+    hit.addEventListener("mouseleave",()=>{ if(!(selType==="edge"&&selEdge===e)) vis.setAttribute("stroke-opacity", edgeBaseOpacity(e)); });
     gEdges.appendChild(hit); gEdges.appendChild(vis);
-    return { e, hit, vis, path:p };
+    return { e, hit, vis };
   });
 
   const nodeEls = nodes.map(n => {
-    const g = el("g", { class:"node-g" });
-    const halo = el("circle", { cx:n.x, cy:n.y, r:n.r+5, fill:"var(--accent)", "fill-opacity":0, filter:"url(#glow)" });
-    const circle = el("circle", { class:"node-ring", cx:n.x, cy:n.y, r:n.r, fill:"var(--surface-2)", stroke:"var(--line)", "stroke-width":2 });
-    const mono = el("text", { class:"node-mono", x:n.x, y:n.y }); mono.textContent = APPS[n.id].mono;
-    const label = el("text", { class:"node-label", x:n.x, y:n.y+n.r+16 }); label.textContent = APPS[n.id].name;
-    g.appendChild(halo); g.appendChild(circle); g.appendChild(mono); g.appendChild(label);
-    g.addEventListener("click", (ev) => { if (!dragged) selectNode(n.id); });
-    enableDrag(g, n);
+    const g=el("g",{class:"node-g"});
+    const ring=el("rect",{class:"node-ring", x:n.x-TILE/2-4, y:n.y-TILE/2-4, width:TILE+8, height:TILE+8, rx:15});
+    const tile=el("rect",{x:n.x-TILE/2, y:n.y-TILE/2, width:TILE, height:TILE, rx:12, fill:"var(--card)", stroke:"var(--line-2)", "stroke-width":1, filter:"url(#ndrop)"});
+    const use=el("use",{href:"#lg-"+n.id, x:n.x-18, y:n.y-18, width:36, height:36});
+    const label=el("text",{class:"node-label", x:n.x, y:n.y+TILE/2+16}); label.textContent=APPS[n.id].name;
+    g.appendChild(ring); g.appendChild(tile); g.appendChild(use); g.appendChild(label);
+    g.addEventListener("click",()=>{ if(!dragged) selectNode(n.id); });
+    enableDrag(g,n);
     gNodes.appendChild(g);
-    return { n, g, halo, circle, mono, label };
+    return { n, g, ring, tile, use, label };
   });
 
-  function redrawPositions() {
-    edgeEls.forEach(o => { const p=edgePath(o.e); o.path=p; o.hit.setAttribute("d",p.d); o.vis.setAttribute("d",p.d); });
-    nodeEls.forEach(o => {
-      const n=o.n;
-      o.halo.setAttribute("cx",n.x); o.halo.setAttribute("cy",n.y);
-      o.circle.setAttribute("cx",n.x); o.circle.setAttribute("cy",n.y);
-      o.mono.setAttribute("x",n.x); o.mono.setAttribute("y",n.y);
-      o.label.setAttribute("x",n.x); o.label.setAttribute("y",n.y+n.r+16);
-    });
-    if (selType==="workflow") positionFlow();
+  function redraw() {
+    edgeEls.forEach(o=>{ const d=edgePath(o.e); o.hit.setAttribute("d",d); o.vis.setAttribute("d",d); });
+    nodeEls.forEach(o=>{ const n=o.n;
+      o.ring.setAttribute("x",n.x-TILE/2-4); o.ring.setAttribute("y",n.y-TILE/2-4);
+      o.tile.setAttribute("x",n.x-TILE/2); o.tile.setAttribute("y",n.y-TILE/2);
+      o.use.setAttribute("x",n.x-18); o.use.setAttribute("y",n.y-18);
+      o.label.setAttribute("x",n.x); o.label.setAttribute("y",n.y+TILE/2+16); });
   }
 
-  // ---- Dragging ---------------------------------------------------------
-  let dragged = false;
-  function svgPoint(ev) {
-    const pt = svg.createSVGPoint(); pt.x=ev.clientX; pt.y=ev.clientY;
-    const m = svg.getScreenCTM().inverse(); const p = pt.matrixTransform(m); return p;
+  // ---- Drag / resize ----------------------------------------------------
+  let dragged=false;
+  function svgPoint(ev){ const pt=svg.createSVGPoint(); pt.x=ev.clientX; pt.y=ev.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
+  function enableDrag(g,n){
+    g.addEventListener("pointerdown",ev=>{ ev.preventDefault(); g.setPointerCapture(ev.pointerId); n.fixed=true; dragged=false; let moved=0;
+      const move=e=>{ const p=svgPoint(e); n.x=p.x; n.y=p.y; if(++moved>2) dragged=true; for(let k=0;k<3;k++) tick(); redraw(); positionFlow(); };
+      const up=()=>{ g.releasePointerCapture(ev.pointerId); svg.removeEventListener("pointermove",move); svg.removeEventListener("pointerup",up);
+        n.fixed=false; settle(36); setTimeout(()=>dragged=false,0); };
+      svg.addEventListener("pointermove",move); svg.addEventListener("pointerup",up); });
   }
-  function enableDrag(g, n) {
-    g.addEventListener("pointerdown", (ev) => {
-      ev.preventDefault(); g.setPointerCapture(ev.pointerId);
-      n.fixed = true; dragged = false; let moved=0;
-      const move = (e) => {
-        const p = svgPoint(e); n.x=p.x; n.y=p.y; moved++; if (moved>2) dragged=true;
-        for (let k=0;k<3;k++) tick(); redrawPositions();
-      };
-      const up = (e) => {
-        g.releasePointerCapture(ev.pointerId);
-        svg.removeEventListener("pointermove", move); svg.removeEventListener("pointerup", up);
-        n.fixed=false; settle(40); setTimeout(()=>dragged=false, 0);
-      };
-      svg.addEventListener("pointermove", move); svg.addEventListener("pointerup", up);
-    });
+  function settle(steps){ let i=0; (function loop(){ if(i++>=steps) return; tick(); redraw(); positionFlow(); requestAnimationFrame(loop); })(); }
+  new ResizeObserver(()=>{ measure(); clampNodes(); settle(50); redraw(); }).observe(graphEl);
+
+  // ---- Selection --------------------------------------------------------
+  let selType="overview", selEdge=null, selNode=null, selWf=null, flowRAF=null, wfEdges=new Set(), wfNodes=new Set();
+  function edgeBaseOpacity(e){
+    if (selType==="edge"&&selEdge===e) return 1;
+    if (selType==="workflow"&&wfEdges.has(e)) return 1;
+    if (selType==="edge"||selType==="node"||selType==="workflow") return 0.1;
+    return 0.32;
   }
-  function settle(steps) {
-    let i=0; (function loop(){ if (i++>=steps) return; tick(); redrawPositions(); requestAnimationFrame(loop); })();
+  function styleGraph(){
+    edgeEls.forEach(o=>{ let w=1.6+(o.e.volume/maxVol)*7;
+      if((selType==="edge"&&selEdge===o.e)||(selType==="workflow"&&wfEdges.has(o.e))) w+=1.4;
+      o.vis.setAttribute("stroke-opacity",edgeBaseOpacity(o.e)); o.vis.setAttribute("stroke-width",w.toFixed(1)); });
+    nodeEls.forEach(o=>{ const hot=(selType==="node"&&selNode===o.n.id)||(selType==="workflow"&&wfNodes.has(o.n.id))||(selType==="edge"&&(selEdge.from===o.n.id||selEdge.to===o.n.id));
+      const dim=selType!=="overview"&&!hot;
+      o.ring.setAttribute("stroke",hot?"var(--accent)":"transparent");
+      o.g.setAttribute("opacity",dim?0.32:1); });
   }
+  function clearFlow(){ if(flowRAF) cancelAnimationFrame(flowRAF); flowRAF=null; gFlow.innerHTML=""; }
 
-  // ---- Selection state --------------------------------------------------
-  let selType = "overview", selEdge = null, selNode = null, selWf = null, flowRAF = null;
-  function isSel(e){ return selType==="edge" && selEdge===e; }
-
-  function clearFlow(){ if (flowRAF) cancelAnimationFrame(flowRAF); flowRAF=null; gFlow.innerHTML=""; }
-
-  function styleGraph() {
-    // edges
-    edgeEls.forEach(o => {
-      let op=0.34, w=(1.6+(o.e.volume/maxVol)*7);
-      if (selType==="edge" && selEdge===o.e) { op=1; w+=1.5; }
-      else if (selType==="workflow" && wfEdges.has(o.e)) { op=1; w+=1.2; }
-      else if (selType!=="overview") { op=0.12; }
-      o.vis.setAttribute("stroke-opacity", op); o.vis.setAttribute("stroke-width", w.toFixed(1));
-    });
-    // nodes
-    nodeEls.forEach(o => {
-      const hot = (selType==="node" && selNode===o.n.id) ||
-                  (selType==="workflow" && wfNodes.has(o.n.id)) ||
-                  (selType==="edge" && (selEdge.from===o.n.id || selEdge.to===o.n.id));
-      const dim = selType!=="overview" && !hot;
-      o.circle.setAttribute("stroke", hot ? "var(--accent)" : "var(--line)");
-      o.circle.setAttribute("stroke-width", hot ? 2.5 : 2);
-      o.halo.setAttribute("fill-opacity", hot ? 0.18 : 0);
-      o.g.setAttribute("opacity", dim ? 0.4 : 1);
-    });
-  }
-
-  let wfEdges = new Set(), wfNodes = new Set();
-
-  function selectEdge(e){ selType="edge"; selEdge=e; selNode=null; selWf=null; setActiveWf(null); clearFlow(); styleGraph(); renderInspector(); }
-  function selectNode(id){ selType="node"; selNode=id; selEdge=null; selWf=null; setActiveWf(null); clearFlow(); styleGraph(); renderInspector(); }
-  function selectWorkflow(wf){
-    selType="workflow"; selWf=wf; selEdge=null; selNode=null;
+  function selectEdge(e){ selType="edge"; selEdge=e; selNode=selWf=null; setActive(null); clearFlow(); styleGraph(); renderFocus(); }
+  function selectNode(id){ selType="node"; selNode=id; selEdge=selWf=null; setActive(null); clearFlow(); styleGraph(); renderFocus(); }
+  function selectOverview(){ selType="overview"; selEdge=selNode=selWf=null; setActive(null); clearFlow(); styleGraph(); renderFocus(); }
+  function selectWorkflow(wf){ selType="workflow"; selWf=wf; selEdge=selNode=null;
     wfEdges=new Set(); wfNodes=new Set();
-    for (let i=0;i<wf.steps.length-1;i++){
-      const a=wf.steps[i].app, b=wf.steps[i+1].app; if (a===b) continue;
-      wfNodes.add(a); wfNodes.add(b);
-      const eo = edgeEls.find(o => o.e.from===a && o.e.to===b); if (eo) wfEdges.add(eo.e);
-    }
-    setActiveWf(wf.id); clearFlow(); styleGraph(); renderInspector(); animateFlow(wf);
-  }
-  function selectOverview(){ selType="overview"; selEdge=selNode=selWf=null; setActiveWf(null); clearFlow(); styleGraph(); renderInspector(); }
-
-  // ---- Flow animation ---------------------------------------------------
-  let flowPaths = [];
-  function positionFlow(){ flowPaths.forEach((fp,i)=>{ const o=[...wfEdges][i]; if(!o) return; }); }
-  function animateFlow(wf){
-    if (reduce) return;
-    const seq=[];
-    for (let i=0;i<wf.steps.length-1;i++){
-      const a=wf.steps[i].app, b=wf.steps[i+1].app; if (a===b) continue;
-      const eo = edgeEls.find(o => o.e.from===a && o.e.to===b); if (eo) seq.push(eo);
-    }
-    if (!seq.length) return;
-    const dot = el("circle", { class:"flow-dot", r:4, filter:"url(#glow)" });
-    dot.setAttribute("fill", "var(--accent-2)");
-    gFlow.appendChild(dot);
-    let seg=0, t=0;
-    (function loop(){
-      const o=seq[seg]; const len=o.hit.getTotalLength(); const pt=o.hit.getPointAtLength(t*len);
-      dot.setAttribute("cx",pt.x); dot.setAttribute("cy",pt.y);
-      t+=0.02; if (t>=1){ t=0; seg=(seg+1)%seq.length; }
-      flowRAF=requestAnimationFrame(loop);
-    })();
+    for(let i=0;i<wf.steps.length-1;i++){ const a=wf.steps[i].app,b=wf.steps[i+1].app; if(a===b) continue; wfNodes.add(a); wfNodes.add(b);
+      const eo=edgeEls.find(o=>o.e.from===a&&o.e.to===b); if(eo) wfEdges.add(eo.e); }
+    setActive(wf.id); clearFlow(); styleGraph(); renderFocus(); animateFlow(wf);
   }
 
-  // ---- Inspector rendering ---------------------------------------------
-  const inspect = document.getElementById("inspect");
-  const chip = (a) => `<span class="chip ${a}"><span class="d"></span>${AUTO_LABEL[a]}</span>`;
-  const esc = (s) => (s==null?"":String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])));
-
-  function renderInspector(){
-    if (selType==="overview") return renderOverview();
-    if (selType==="edge")     return renderEdge(selEdge);
-    if (selType==="node")     return renderNode(selNode);
-    if (selType==="workflow") return renderWorkflow(selWf);
+  let flowSeq=[];
+  function positionFlow(){ /* dot re-reads path live in loop */ }
+  function animateFlow(wf){ if(reduce) return;
+    flowSeq=[]; for(let i=0;i<wf.steps.length-1;i++){ const a=wf.steps[i].app,b=wf.steps[i+1].app; if(a===b) continue;
+      const eo=edgeEls.find(o=>o.e.from===a&&o.e.to===b); if(eo) flowSeq.push(eo); }
+    if(!flowSeq.length) return;
+    const dot=el("circle",{class:"flow-dot",r:4.5,filter:"url(#glow)"}); gFlow.appendChild(dot);
+    let seg=0,t=0;
+    (function loop(){ const o=flowSeq[seg]; const len=o.hit.getTotalLength(); const p=o.hit.getPointAtLength(t*len);
+      dot.setAttribute("cx",p.x); dot.setAttribute("cy",p.y); t+=0.022; if(t>=1){ t=0; seg=(seg+1)%flowSeq.length; }
+      flowRAF=requestAnimationFrame(loop); })();
   }
 
-  function renderOverview(){
-    const ranked=[...WORKFLOWS].map(w=>({w, tot:w.perWeek*w.minEach})).sort((a,b)=>b.tot-a.tot);
-    const maxTot=ranked[0].tot;
-    const autoSave=WORKFLOWS.filter(w=>w.auto==="auto").reduce((s,w)=>s+w.perWeek*w.minEach,0);
-    const totTime=WORKFLOWS.reduce((s,w)=>s+w.perWeek*w.minEach,0);
-    inspect.innerHTML =
-      `<div class="eyebrow">Overview · last 7 days</div>
-       <div class="ins-title">What you repeat</div>
-       <div class="ins-sub">${WORKFLOWS.length} recurring tasks across ${Object.keys(APPS).length} apps</div>
-       <div class="stat-grid">
-         <div class="stat"><div class="k">Tracked in tasks</div><div class="v">${(totTime/60).toFixed(1)}<small> h/wk</small></div></div>
-         <div class="stat"><div class="k">Automatable</div><div class="v" style="color:var(--auto)">${(autoSave/60).toFixed(1)}<small> h/wk</small></div></div>
-       </div>
-       <div class="eyebrow sec-label">Task streams — by total time</div>
-       <div class="rank">
-       ${ranked.map(({w,tot})=>`
-         <div class="r" data-wf="${w.id}">
-           <div><div class="nm">${esc(w.name)}</div><div class="meta">${w.freq} · ${w.minEach}m each</div></div>
-           <div class="meta">${tot} min/wk</div>
-           <div class="bar"><i style="width:${Math.round(tot/maxTot*100)}%; background:${AUTO_VAR[w.auto]}"></i></div>
-         </div>`).join("")}
-       </div>
-       <div class="muted-note">Ranked from ${(3412).toLocaleString()} captured events today. Click any task to trace it on the map.</div>`;
-    inspect.querySelectorAll(".r").forEach(r => r.addEventListener("click", () => {
-      const wf=WORKFLOWS.find(w=>w.id===r.dataset.wf); selectWorkflow(wf);
-      const card=document.querySelector(`.wf[data-wf="${wf.id}"]`); if (card) card.scrollIntoView({inline:"center", block:"nearest", behavior: reduce?"auto":"smooth"});
-    }));
+  // ---- Focus (top of right panel) --------------------------------------
+  const focus=document.getElementById("focus");
+  const esc=s=>s==null?"":String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const pill=a=>`<span class="pill ${a}"><span class="d"></span>${AUTO_LABEL[a]}</span>`;
+
+  function renderFocus(){
+    if(selType==="overview") return focusOverview();
+    if(selType==="edge") return focusEdge(selEdge);
+    if(selType==="node") return focusNode(selNode);
+    if(selType==="workflow") return focusWorkflow(selWf);
+  }
+  function focusOverview(){
+    const tot=WORKFLOWS.reduce((s,w)=>s+w.perWeek*w.minEach,0);
+    const auto=WORKFLOWS.filter(w=>w.auto==="auto").reduce((s,w)=>s+w.perWeek*w.minEach,0);
+    focus.innerHTML=`<div class="flabel"><span class="eyebrow">Overview · last 7 days</span></div>
+      <h2>What you repeat</h2>
+      <div class="fsub">${WORKFLOWS.length} recurring tasks · ${Object.keys(APPS).length} apps · 96 hand-offs</div>
+      <div class="statrow">
+        <div class="stat"><div class="k">In tracked tasks</div><div class="v">${(tot/60).toFixed(1)}<small> h/wk</small></div></div>
+        <div class="stat"><div class="k">Automatable</div><div class="v" style="color:var(--auto)">${(auto/60).toFixed(1)}<small> h/wk</small></div></div>
+      </div>
+      <div class="note">Select an edge to inspect a hand-off, or a flow below to trace it across the map.</div>`;
+  }
+  const TIMES=["Today 09:14","Today 11:02","Yesterday 16:47"];
+  function focusEdge(e){ const a=APPS[e.from], b=APPS[e.to], p=e.parts[0];
+    const insts=e.parts.filter(x=>x.sample).slice(0,3);
+    focus.innerHTML=`<div class="flabel"><span class="eyebrow">Hand-off</span>${pill(e.auto)}</div>
+      <h2 style="display:flex;align-items:center;gap:9px">${logo(e.from,22)} ${esc(a.name)} <span style="color:var(--faint)">→</span> ${logo(e.to,22)} ${esc(b.name)}</h2>
+      <div class="fsub">${e.volume} hand-offs/wk · via ${VIA_LABEL[p.via]||p.via}</div>
+      <div class="steps" style="margin-top:16px">
+        <div class="step"><div class="badge">${logo(e.from,30)}</div>
+          <div><div class="an">${esc(p.action)}</div>
+          <div class="via">carries to ${esc(b.name)}${p.sample?` · <span class="pv">${esc(p.sample)}</span>`:""}</div></div></div>
+      </div>
+      <div class="eyebrow" style="margin:6px 0 8px">Captured instances</div>
+      <div class="instances">${(insts.length?insts:[{sample:"—"}]).map((x,i)=>`<div class="inst"><span class="t">${TIMES[i]||"earlier"}</span><span class="p">${esc(x.sample||"—")}</span></div>`).join("")}</div>
+      <div class="backlink" data-wf="${e.parts[0].wf.id}">↳ part of “${esc(e.parts[0].wf.name)}”</div>`;
+    focus.querySelector(".backlink").addEventListener("click",ev=>{ const wf=WORKFLOWS.find(w=>w.id===ev.currentTarget.dataset.wf); selectWorkflow(wf); scrollFeed(wf.id); });
+  }
+  function focusNode(id){ const a=APPS[id]; const wfs=WORKFLOWS.filter(w=>w.steps.some(s=>s.app===id));
+    const outs=EDGES.filter(e=>e.from===id).length, ins=EDGES.filter(e=>e.to===id).length;
+    focus.innerHTML=`<div class="flabel"><span class="eyebrow">App</span></div>
+      <h2 style="display:flex;align-items:center;gap:10px">${logo(id,26)} ${esc(a.name)}</h2>
+      <div class="fsub">${esc(a.kind)} · ${activity[id]} hand-offs/wk</div>
+      <div class="statrow"><div class="stat"><div class="k">Feeds into</div><div class="v">${outs}<small> apps</small></div></div>
+        <div class="stat"><div class="k">Fed from</div><div class="v">${ins}<small> apps</small></div></div></div>
+      <div class="eyebrow" style="margin:16px 0 8px">Tasks touching ${esc(a.name)}</div>
+      ${wfs.map(w=>`<div class="backlink" data-wf="${w.id}" style="display:flex;margin-top:8px">↳ ${esc(w.name)}</div>`).join("")}`;
+    focus.querySelectorAll(".backlink").forEach(l=>l.addEventListener("click",ev=>{ const wf=WORKFLOWS.find(w=>w.id===ev.currentTarget.dataset.wf); selectWorkflow(wf); scrollFeed(wf.id); }));
+  }
+  function focusWorkflow(wf){ const tot=wf.perWeek*wf.minEach, canAuto=wf.auto==="auto";
+    focus.innerHTML=`<div class="flabel"><span class="eyebrow">Workflow · discrete capture</span>${pill(wf.auto)}</div>
+      <h2>${esc(wf.name)}</h2><div class="fsub">trigger: ${esc(wf.trigger)}</div>
+      <div class="statrow"><div class="stat"><div class="k">Frequency</div><div class="v">${esc(wf.freq)}</div></div>
+        <div class="stat"><div class="k">Cost</div><div class="v">${tot}<small> min/wk</small></div></div></div>
+      <div class="eyebrow" style="margin:16px 0 8px">End-to-end steps</div>
+      <div class="steps">${wf.steps.map(s=>{const a=APPS[s.app];return `<div class="step"><div class="badge">${logo(s.app,30)}</div>
+        <div><div class="an"><b>${esc(a.name)}</b> — ${esc(s.action)}</div>
+        <div class="via">via ${VIA_LABEL[s.via]||s.via}${s.sample?` · <span class="pv">${esc(s.sample)}</span>`:""}</div></div></div>`;}).join("")}</div>
+      ${canAuto?`<button class="cta" type="button">Build this automation <span class="arrow">→</span></button>
+        <div class="note">Steps are stable across captures and every app has an API — strong candidate. AI drafts each step; the send stays behind your confirmation.</div>`
+        :`<div class="note" style="margin-top:15px">Marked <b>assist</b>: this task branches or needs judgment. Best as an AI-drafted starting point you review — not full automation.</div>`}
+      <div class="backlink" id="clearSel">← back to overview</div>`;
+    focus.querySelector("#clearSel").addEventListener("click",selectOverview);
   }
 
-  const TIMES = ["Today 09:14","Today 11:02","Yesterday 16:47","Yesterday 10:31","Mon 14:08"];
-  function renderEdge(e){
-    const a=APPS[e.from], b=APPS[e.to], p=e.parts[0];
-    const insts = e.parts.filter(x=>x.sample).slice(0,3);
-    inspect.innerHTML =
-      `<div class="eyebrow">Hand-off</div>
-       <div class="ins-title">${esc(a.name)} → ${esc(b.name)}</div>
-       <div class="ins-sub">${e.volume} hand-offs/wk · via ${VIA_LABEL[p.via]||p.via}</div>
-       <div style="margin:12px 0 4px">${chip(e.auto)}</div>
-       <div class="eyebrow sec-label">The action taken</div>
-       <div class="step" style="padding-bottom:6px">
-         <div class="badge">${a.mono}</div>
-         <div class="body"><div class="an">${esc(p.action)}</div>
-         <div class="via">carries to ${esc(b.name)} · via ${VIA_LABEL[p.via]||p.via}${p.sample?` · <span class="pv">${esc(p.sample)}</span>`:""}</div></div>
-       </div>
-       <div class="eyebrow sec-label">Captured instances</div>
-       <div class="instances">
-       ${(insts.length?insts:[{sample:"—"}]).map((x,i)=>`
-         <div class="inst"><span class="t">${TIMES[i]||"earlier"}</span><span class="p">${esc(x.sample||"—")}</span></div>`).join("")}
-       </div>
-       <div class="eyebrow sec-label">Appears in</div>
-       ${[...new Set(e.parts.map(x=>x.wf.id))].map(id=>{const w=WORKFLOWS.find(v=>v.id===id);
-         return `<div class="link" data-wf="${id}">↳ ${esc(w.name)}</div>`;}).join("")}`;
-    inspect.querySelectorAll(".link").forEach(l=>l.addEventListener("click",()=>selectWorkflow(WORKFLOWS.find(w=>w.id===l.dataset.wf))));
-  }
-
-  function renderNode(id){
-    const a=APPS[id];
-    const outs=EDGES.filter(e=>e.from===id), ins=EDGES.filter(e=>e.to===id);
-    const wfs=WORKFLOWS.filter(w=>w.steps.some(s=>s.app===id));
-    inspect.innerHTML =
-      `<div class="eyebrow">App</div>
-       <div class="ins-title">${esc(a.name)}</div>
-       <div class="ins-sub">${esc(a.kind)} · ${activity[id]} hand-offs/wk</div>
-       <div class="stat-grid">
-         <div class="stat"><div class="k">Feeds into</div><div class="v">${outs.length}<small> apps</small></div></div>
-         <div class="stat"><div class="k">Fed from</div><div class="v">${ins.length}<small> apps</small></div></div>
-       </div>
-       <div class="eyebrow sec-label">Tasks touching ${esc(a.name)}</div>
-       <div class="rank">
-       ${wfs.map(w=>`<div class="r" data-wf="${w.id}"><div><div class="nm">${esc(w.name)}</div>
-         <div class="meta">${w.freq}</div></div><div>${chip(w.auto)}</div></div>`).join("")}
-       </div>`;
-    inspect.querySelectorAll(".r").forEach(r=>r.addEventListener("click",()=>selectWorkflow(WORKFLOWS.find(w=>w.id===r.dataset.wf))));
-  }
-
-  function renderWorkflow(wf){
-    const tot=wf.perWeek*wf.minEach;
-    const canAuto = wf.auto==="auto";
-    inspect.innerHTML =
-      `<div class="eyebrow">Workflow · discrete capture</div>
-       <div class="ins-title">${esc(wf.name)}</div>
-       <div class="ins-sub">trigger: ${esc(wf.trigger)}</div>
-       <div style="margin:12px 0 2px">${chip(wf.auto)}</div>
-       <div class="stat-grid">
-         <div class="stat"><div class="k">Frequency</div><div class="v">${esc(wf.freq)}</div></div>
-         <div class="stat"><div class="k">Cost</div><div class="v">${tot}<small> min/wk</small></div></div>
-       </div>
-       <div class="eyebrow sec-label">End-to-end steps</div>
-       <div class="flowsteps">
-       ${wf.steps.map(s=>{const a=APPS[s.app];return `
-         <div class="step"><div class="badge">${a.mono}</div>
-           <div class="body"><div class="an"><b style="font-weight:600">${esc(a.name)}</b> — ${esc(s.action)}</div>
-           <div class="via">via ${VIA_LABEL[s.via]||s.via}${s.sample?` · <span class="pv">${esc(s.sample)}</span>`:""}</div></div>
-         </div>`;}).join("")}
-       </div>
-       ${canAuto
-         ? `<button class="cta" type="button">✦ Build this automation<span class="arrow">→</span></button>
-            <div class="muted-note">Steps are stable across captures and every app here has an API — strong candidate. AI drafts each step; the send stays behind your confirmation.</div>`
-         : `<div class="muted-note" style="margin-top:16px">Marked <b>assist</b>: this task branches or needs judgment. Best as an AI-drafted starting point you review — not full automation.</div>`}`;
-  }
-
-  // ---- Bottom drawer ----------------------------------------------------
-  const track = document.getElementById("track");
-  document.getElementById("wfCount").textContent = WORKFLOWS.length + " mapped";
-  const cardEls = {};
-  [...WORKFLOWS].sort((a,b)=>b.perWeek*b.minEach - a.perWeek*a.minEach).forEach(wf => {
-    const card = document.createElement("div");
-    card.className = "wf"; card.dataset.wf = wf.id;
-    const chain = wf.steps.map(s=>APPS[s.app].mono);
-    card.innerHTML =
-      `<div class="r1"><div class="nm">${esc(wf.name)}</div>${chip(wf.auto)}</div>
-       <div class="metrics">
-         <div class="m"><div class="k">Freq</div><div class="v">${esc(wf.freq)}</div></div>
-         <div class="m"><div class="k">Each</div><div class="v">${wf.minEach}m</div></div>
-         <div class="m"><div class="k">Total</div><div class="v">${wf.perWeek*wf.minEach}m</div></div>
-       </div>
-       <div class="chain">${chain.map((m,i)=>`<span class="a">${m}</span>${i<chain.length-1?'<span class="sep">→</span>':""}`).join("")}</div>`;
-    card.addEventListener("click", () => selectWorkflow(wf));
-    track.appendChild(card); cardEls[wf.id]=card;
+  // ---- Feed (ranked flows) ---------------------------------------------
+  const feed=document.getElementById("feed");
+  const ranked=[...WORKFLOWS].map(w=>({w,tot:w.perWeek*w.minEach})).sort((a,b)=>b.tot-a.tot);
+  const maxTot=ranked[0].tot;
+  document.getElementById("feedCount").textContent=WORKFLOWS.length;
+  const feedCards={};
+  ranked.forEach(({w,tot},i)=>{
+    const card=document.createElement("div"); card.className="flow"; card.dataset.wf=w.id;
+    const chain=w.steps.map((s,j)=>`${logo(s.app,22)}${j<w.steps.length-1?'<span class="sep">→</span>':""}`).join("");
+    card.innerHTML=`<div class="r1"><div class="rk">${String(i+1).padStart(2,"0")}</div>
+        <div><div class="nm">${esc(w.name)}</div><div class="sub">${esc(w.freq)} · ${w.minEach}m each</div></div>${pill(w.auto)}</div>
+      <div class="meter"><div class="track2"><i style="width:${Math.round(tot/maxTot*100)}%;background:${AUTO_VAR[w.auto]}"></i></div>
+        <span class="mv">${tot}<small> m/wk</small></span></div>
+      <div class="fchain">${chain}</div>`;
+    card.addEventListener("click",()=>{ selectWorkflow(w); });
+    feed.appendChild(card); feedCards[w.id]=card;
   });
-  function setActiveWf(id){ Object.entries(cardEls).forEach(([k,c])=>c.classList.toggle("active", k===id)); }
+  function scrollFeed(id){ const c=feedCards[id]; if(c) c.scrollIntoView({block:"nearest",behavior:reduce?"auto":"smooth"}); }
 
-  // ---- Theme toggle -----------------------------------------------------
-  document.getElementById("themeBtn").addEventListener("click", () => {
-    const root=document.documentElement;
-    const cur=root.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
-    root.setAttribute("data-theme", cur==="dark"?"light":"dark");
+  // ---- Drawer -----------------------------------------------------------
+  const track=document.getElementById("track");
+  document.getElementById("wfCount").textContent=WORKFLOWS.length+" mapped";
+  const wfCards={};
+  ranked.forEach(({w})=>{
+    const card=document.createElement("div"); card.className="wf"; card.dataset.wf=w.id;
+    const chain=w.steps.map((s,j)=>`${logo(s.app,26)}${j<w.steps.length-1?'<span class="sep" style="color:var(--faint);font-family:var(--mono)">→</span>':""}`).join("");
+    card.innerHTML=`<div class="r1"><div class="nm">${esc(w.name)}</div>${pill(w.auto)}</div>
+      <div class="metrics"><div><div class="k">Freq</div><div class="v">${esc(w.freq)}</div></div>
+        <div><div class="k">Each</div><div class="v">${w.minEach}m</div></div>
+        <div><div class="k">Total</div><div class="v">${w.perWeek*w.minEach}m</div></div></div>
+      <div class="fchain">${chain}</div>`;
+    card.addEventListener("click",()=>{ selectWorkflow(w); scrollFeed(w.id); });
+    track.appendChild(card); wfCards[w.id]=card;
   });
+  function setActive(id){ Object.entries(feedCards).forEach(([k,c])=>c.classList.toggle("active",k===id));
+    Object.entries(wfCards).forEach(([k,c])=>c.classList.toggle("active",k===id)); }
+
+  // ---- Live backend wiring ---------------------------------------------
+  // When served by app.py, /api/* is reachable and the button really
+  // starts/stops capture on this laptop. As a hosted demo it fails the
+  // probe and falls back to explaining how to run it locally.
+  const capBtn=document.getElementById("capBtn"), capLabel=document.getElementById("capLabel");
+  const livePill=document.getElementById("livePill"), liveText=document.getElementById("liveText");
+  const liveReal=document.getElementById("liveReal");
+  let LIVE=false, running=false, pollTimer=null;
+
+  async function api(path, method){ const r=await fetch(path,{method:method||"GET"}); if(!r.ok) throw new Error("bad"); return r.json(); }
+
+  function applyStatus(s){
+    running=!!s.running;
+    capBtn.classList.toggle("on", running);
+    capLabel.textContent = running ? "Stop mapping" : "Start mapping";
+    capBtn.querySelector(".ic").textContent = running ? "⏸" : "▶";
+    livePill.classList.toggle("on", running);
+    liveText.textContent = running ? `capturing · ${s.events_today} today` : "idle · not capturing";
+    renderLiveReal(s);
+  }
+  function renderLiveReal(s){
+    liveReal.style.display="block";
+    const rec = (s.recent||[]).map(r=>`<div class="lr-ev"><span class="k2">${esc(r.kind)}</span><span class="t2">${esc(r.app)}</span><span class="d2">${esc(r.kind==="clipboard"?r.clip:r.title)}</span></div>`).join("");
+    liveReal.innerHTML =
+      `<div class="lr-top"><span class="eyebrow">Live capture · this laptop</span>
+        <span class="pill ${running?"auto":"skip"}"><span class="d"></span>${running?"capturing":"stopped"}</span></div>
+       <div class="lr-stats">
+         <div><div class="k">Events</div><div class="v">${s.total??0}</div></div>
+         <div><div class="k">Today</div><div class="v">${s.events_today??0}</div></div>
+         <div><div class="k">Apps</div><div class="v">${s.apps??0}</div></div>
+         <div><div class="k">Hand-offs</div><div class="v">${s.handoffs??0}</div></div>
+       </div>
+       ${rec ? `<div class="eyebrow" style="margin:14px 0 7px">Most recent</div><div class="lr-recent">${rec}</div>`
+             : `<div class="note" style="margin-top:12px">${running?"Waiting for activity — switch windows or copy something.":"Click “Start mapping” to begin capturing."}</div>`}`;
+  }
+  function showDemoNote(){
+    liveReal.style.display="block";
+    liveReal.innerHTML =
+      `<div class="lr-top"><span class="eyebrow">Live capture</span><span class="pill skip"><span class="d"></span>demo</span></div>
+       <div class="note" style="margin-top:10px">This is the hosted demo with sample data. To map <b>your own</b> laptop, run it locally:
+       <div style="margin:9px 0"><code>python app.py</code></div>
+       then click “Start mapping”. Your activity stays on your machine.</div>`;
+  }
+
+  capBtn.addEventListener("click", async () => {
+    if(!LIVE){ showDemoNote(); return; }
+    try { applyStatus(await api(running ? "/api/stop" : "/api/start", "POST")); } catch(e){}
+  });
+
+  async function connect(){
+    try {
+      const s = await api("/api/status");
+      LIVE = true;
+      applyStatus(s);
+      if(pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(async () => { try { applyStatus(await api("/api/status")); } catch(e){} }, 2000);
+    } catch(e) {
+      LIVE = false; liveText.textContent = "demo data";
+    }
+  }
 
   // ---- Go ---------------------------------------------------------------
-  redrawPositions();
-  selectOverview();
+  redraw(); selectOverview(); connect();
 })();
 </script>

@@ -20,7 +20,18 @@ Everything runs on your laptop. Captured data stays in a local SQLite file
 only actual content capture is a clipboard preview, capped at 80 chars and
 stored alongside a hash. Disable it entirely with `--no-clip-text`.
 
-## Run
+## Run the app (recommended)
+
+```bash
+python app.py
+```
+
+This starts a local server (stdlib only, bound to `127.0.0.1` so nothing is
+exposed to your network), opens the UI in your browser, and gives you a
+**Start mapping** button that turns capture on/off and shows live stats from
+your own `activity.db`. All data stays on your laptop.
+
+## Run the logger directly (CLI)
 
 ```bash
 # smoke test (30s, prints events)
