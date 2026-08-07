@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>workflow-mapper capture</title>
+<style>
+  :root { color-scheme: dark; }
+  body { width: 250px; margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
+    background: #12151f; color: #ECEEF4; padding: 14px; }
+  .row { display: flex; align-items: center; justify-content: space-between; }
+  h1 { font-size: 13px; margin: 0 0 2px; letter-spacing: -.01em; }
+  .sub { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #626C80; margin-bottom: 12px; }
+  .toggle { border: none; border-radius: 9px; padding: 8px 14px; font-weight: 600; font-size: 13px; cursor: pointer;
+    color: #1c1206; background: linear-gradient(180deg, #FFD98A, #F2C14E); }
+  .toggle.off { background: #1b2130; color: #98A1B4; box-shadow: inset 0 0 0 1px #333B4D; }
+  .status { display: flex; align-items: center; gap: 7px; font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px; color: #98A1B4; margin-top: 12px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #6B7688; }
+  .dot.ok { background: #37D39A; }
+  .note { font-size: 11px; color: #626C80; margin-top: 10px; line-height: 1.4; }
+</style>
+<div class="row">
+  <div>
+    <h1>workflow-mapper</h1>
+    <div class="sub">web capture · deterministic</div>
+  </div>
+  <button class="toggle" id="toggle">On</button>
+</div>
+<div class="status"><span class="dot" id="dot"></span><span id="statusText">checking server…</span></div>
+<div class="note">Captures URLs, clicks, form entries and selections to your local app. Nothing leaves this machine.</div>
+<script src="popup.js"></script>

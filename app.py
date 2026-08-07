@@ -14,6 +14,7 @@ so nothing is exposed to your network.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sqlite3
@@ -22,6 +23,7 @@ import time
 import webbrowser
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 import logger
 
@@ -30,6 +32,53 @@ DB = os.path.join(HERE, "activity.db")
 UI = os.path.join(HERE, "ui", "prototype.html")
 
 capture = logger.Capture(DB)
+
+# Web events come from the browser extension (deterministic capture, no AI).
+WEB_SCHEMA = """
+CREATE TABLE IF NOT EXISTS web_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts           REAL NOT NULL,
+    kind         TEXT NOT NULL,   -- pageview | nav | click | input | select
+    origin       TEXT,            -- scheme://host
+    path         TEXT,            -- url path (query stripped for privacy)
+    title        TEXT,
+    target       TEXT,            -- element descriptor
+    text_len     INTEGER,
+    text_hash    TEXT,
+    text_preview TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_web_ts ON web_events(ts);
+CREATE INDEX IF NOT EXISTS idx_web_origin ON web_events(origin);
+"""
+
+
+def ensure_web_schema():
+    conn = sqlite3.connect(DB)
+    conn.executescript(WEB_SCHEMA)
+    conn.commit()
+    conn.close()
+
+
+def ingest_web(events):
+    """Store a batch of web events. Query strings are dropped; text is hashed."""
+    conn = sqlite3.connect(DB)
+    try:
+        for e in events:
+            url = e.get("url") or ""
+            parts = urlsplit(url)
+            origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme else None
+            preview = (e.get("text") or "")[:80] or None
+            thash = hashlib.sha256(preview.encode("utf-8", "replace")).hexdigest() if preview else None
+            conn.execute(
+                "INSERT INTO web_events (ts, kind, origin, path, title, target, text_len, text_hash, text_preview) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (e.get("ts") or time.time(), e.get("kind", "?"), origin, parts.path or None,
+                 e.get("title"), e.get("target"), e.get("len"), thash, preview),
+            )
+        conn.commit()
+        return len(events)
+    finally:
+        conn.close()
 
 
 def db_stats():
@@ -54,8 +103,17 @@ def db_stats():
             "title": (r["title"] or "")[:70],
             "clip": r["clip_preview"] or (r["clip_type"] or ""),
         } for r in rows]
-        return {"total": total, "events_today": today, "apps": apps,
-                "handoffs": handoffs, "recent": recent}
+        # Web events (from the browser extension), if that table exists yet.
+        web_total = web_today = web_sites = 0
+        try:
+            web_total = conn.execute("SELECT COUNT(*) FROM web_events").fetchone()[0]
+            web_today = conn.execute("SELECT COUNT(*) FROM web_events WHERE ts >= ?", (midnight,)).fetchone()[0]
+            web_sites = conn.execute("SELECT COUNT(DISTINCT origin) FROM web_events WHERE origin IS NOT NULL").fetchone()[0]
+        except sqlite3.OperationalError:
+            pass
+        return {"total": total, "events_today": today, "apps": apps, "handoffs": handoffs,
+                "web_total": web_total, "web_today": web_today, "web_sites": web_sites,
+                "recent": recent}
     finally:
         conn.close()
 
@@ -73,8 +131,24 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype + "; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        # Loopback-only server; allow the browser extension to post events.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
         self.wfile.write(data)
+
+    def do_OPTIONS(self):
+        self._send(204, b"", "text/plain")
+
+    def _read_json(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if not length:
+            return None
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return None
 
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj))
@@ -100,6 +174,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/stop":
             capture.stop()
             return self._json(status_payload())
+        if self.path == "/api/ingest":
+            body = self._read_json() or {}
+            events = body.get("events") if isinstance(body, dict) else None
+            n = ingest_web(events) if events else 0
+            return self._json({"stored": n})
         self._send(404, "not found", "text/plain")
 
     def log_message(self, *args):
@@ -116,6 +195,7 @@ def main():
         print("The capture logger targets Windows; the UI will still serve.", file=sys.stderr)
 
     logger.open_db(DB).close()  # create the DB/schema up front
+    ensure_web_schema()         # create the web_events table up front
     url = f"http://127.0.0.1:{args.port}"
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"workflow-mapper running at {url}")

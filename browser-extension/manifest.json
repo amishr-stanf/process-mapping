@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "workflow-mapper capture",
+  "version": "0.1.0",
+  "description": "Deterministic capture of web actions (URLs, clicks, form entries, text selections) to your local workflow-mapper. No AI, no external servers.",
+  "permissions": ["tabs", "webNavigation", "storage", "alarms"],
+  "host_permissions": ["http://127.0.0.1:8765/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "workflow-mapper capture" },
+  "content_scripts": [
+    { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle" }
+  ]
+}

@@ -31,6 +31,22 @@ exposed to your network), opens the UI in your browser, and gives you a
 **Start mapping** button that turns capture on/off and shows live stats from
 your own `activity.db`. All data stays on your laptop.
 
+## Capture web actions (Chrome extension)
+
+The OS logger can't see inside web apps (Salesforce, web Gmail, internal
+tools). The browser extension captures that deterministically — active URL,
+navigation, clicks, form entries, and text selections — and posts them to the
+local server (which must be running: `python app.py`).
+
+1. Open `chrome://extensions`
+2. Turn on **Developer mode** (top-right)
+3. Click **Load unpacked** and select the `browser-extension/` folder
+4. Use the toolbar popup to toggle capture on/off and see server status
+
+Privacy: password/hidden/sensitive fields are never read, URL query strings
+are dropped, text is truncated and hashed, and events go only to
+`127.0.0.1`. Stored in the `web_events` table of `activity.db`.
+
 ## Run the logger directly (CLI)
 
 ```bash
