@@ -168,6 +168,10 @@
   .backlink { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; color: var(--accent); cursor: pointer;
     font-family: var(--mono); font-size: 12px; }
   .backlink:hover { text-decoration: underline; }
+  .fileflow { display: flex; align-items: center; gap: 9px; margin-top: 9px; font-family: var(--mono); font-size: 12px; }
+  .fileflow .ffl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .fileflow .ff { color: var(--accent-2); }
+  .fchip { font-family: var(--mono); font-size: 10.5px; color: var(--accent-2); background: var(--panel-2); padding: 1px 7px; border-radius: 6px; }
 
   /* Bottom drawer */
   .drawer { grid-area: drawer; border-top: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
@@ -259,7 +263,7 @@
 
   <section class="graph">
     <svg class="stage" id="svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="App relationship graph"></svg>
-    <div class="hint">drag tiles · click an edge to see the hand-off · click a flow to trace it</div>
+    <div class="hint">drag tiles · edges = cross-app hand-offs · loops = repeated in-app work · click to inspect</div>
   </section>
 
   <aside class="flows">
@@ -322,11 +326,25 @@
       trigger:"Ad-hoc — before a call", steps:[
         { app:"chrome", action:"Gather across ~8 tabs (site, news, filings)", via:"open" },
         { app:"word",   action:"Write up a one-page brief", via:"typed" } ] },
+    // Intra-app loops — repetitive work that stays inside one app (file→file)
+    { id:"cleanexport", name:"Clean CRM export", auto:"auto", perWeek:15, minEach:6, freq:"3×/day",
+      trigger:"You export leads from the CRM", fileflow:"export.csv → leads_2026-08-06.xlsx", steps:[
+        { app:"excel", action:"Delete junk header rows", via:"typed", file:"export.csv" },
+        { app:"excel", action:"Apply the formatting template (widths, headers, filters)", via:"typed", file:"export.csv" },
+        { app:"excel", action:"Save as a dated workbook", via:"typed", file:"leads_2026-08-06.xlsx", sample:"leads_2026-08-06.xlsx" } ] },
+    { id:"reconcile", name:"Reconcile weekly workbooks", auto:"auto", perWeek:5, minEach:12, freq:"5×/wk",
+      trigger:"Regional workbooks land each Monday", fileflow:"regional_Q3.xlsx → master_ledger.xlsx", steps:[
+        { app:"excel", action:"Copy the totals column", via:"clipboard", file:"regional_Q3.xlsx", sample:"col H · 42 rows" },
+        { app:"excel", action:"Paste as this week's column", via:"clipboard", file:"master_ledger.xlsx" },
+        { app:"excel", action:"Recompute variance, fix formatting", via:"typed", file:"master_ledger.xlsx" } ] },
   ];
 
   const AUTO_LABEL = { auto:"Automatable", assist:"Assist / draft", skip:"Manual" };
   const AUTO_VAR   = { auto:"var(--auto)", assist:"var(--assist)", skip:"var(--skip)" };
   const VIA_LABEL  = { clipboard:"clipboard", typed:"typed", open:"opened" };
+
+  // Flag intra-app workflows (all steps in one app) — these become self-loops.
+  WORKFLOWS.forEach(w => { w.intra = w.steps.every(s => s.app === w.steps[0].app); w.app0 = w.steps[0].app; });
 
   // Derive edges from consecutive steps
   const edgeMap = new Map();
@@ -343,7 +361,13 @@
   EDGES.forEach(e => { e.parts.sort((x,y)=>y.wf.perWeek-x.wf.perWeek); e.auto = e.parts[0].wf.auto; });
   const activity = {}; Object.keys(APPS).forEach(k=>activity[k]=0);
   EDGES.forEach(e => { activity[e.from]+=e.volume; activity[e.to]+=e.volume; });
-  const maxVol = Math.max(...EDGES.map(e=>e.volume));
+  // Self-loops: one per app that has intra-app (in-app repetitive) workflows.
+  const intraByApp = new Map();
+  WORKFLOWS.filter(w=>w.intra).forEach(w => { if(!intraByApp.has(w.app0)) intraByApp.set(w.app0,[]); intraByApp.get(w.app0).push(w); });
+  const LOOPS = [...intraByApp.entries()].map(([app,wfs]) => ({ app, wfs,
+    volume: wfs.reduce((s,w)=>s+w.perWeek,0), auto: wfs.slice().sort((a,b)=>b.perWeek-a.perWeek)[0].auto }));
+  LOOPS.forEach(l => { activity[l.app]+=l.volume; });
+  const maxVol = Math.max(1, ...EDGES.map(e=>e.volume), ...LOOPS.map(l=>l.volume));
 
   // ---- Responsive layout / force sim -----------------------------------
   const graphEl = document.querySelector(".graph");
@@ -390,8 +414,8 @@
   defs.innerHTML = '<filter id="ndrop" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.45"/></filter>' +
     '<filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
   svg.appendChild(defs);
-  const gEdges=document.createElementNS(NS,"g"), gFlow=document.createElementNS(NS,"g"), gNodes=document.createElementNS(NS,"g");
-  svg.appendChild(gEdges); svg.appendChild(gFlow); svg.appendChild(gNodes);
+  const gEdges=document.createElementNS(NS,"g"), gLoops=document.createElementNS(NS,"g"), gFlow=document.createElementNS(NS,"g"), gNodes=document.createElementNS(NS,"g");
+  svg.appendChild(gEdges); svg.appendChild(gLoops); svg.appendChild(gFlow); svg.appendChild(gNodes);
   const el=(t,a)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); return e; };
 
   function edgePath(e){ const a=nodeById[e.from], b=nodeById[e.to];
@@ -409,6 +433,26 @@
     return { e, hit, vis };
   });
 
+  // Self-loop path: an arc that leaves the top of the tile and returns to it.
+  function loopPath(n){ const r=TILE/2, x=n.x, y=n.y;
+    return `M ${x-11} ${y-r+3} C ${x-52} ${y-r-54} ${x+52} ${y-r-54} ${x+11} ${y-r+3}`; }
+  function loopBaseOpacity(l){
+    if (selType==="workflow" && selWf && selWf.intra && selWf.app0===l.app) return 1;
+    if (selType==="edge" || selType==="node" || selType==="workflow") return 0.1;
+    return 0.42;
+  }
+  const loopEls = LOOPS.map(l => {
+    const n=nodeById[l.app], d=loopPath(n);
+    const hit=el("path",{class:"edge-hit",d,"stroke-width":16});
+    const vis=el("path",{class:"edge-vis",d,stroke:AUTO_VAR[l.auto],"stroke-width":(1.6+(l.volume/maxVol)*7).toFixed(1),"stroke-opacity":0.42});
+    const top=l.wfs.slice().sort((a,b)=>b.perWeek-a.perWeek)[0];
+    hit.addEventListener("click",()=>selectWorkflow(top));
+    hit.addEventListener("mouseenter",()=>{ if(loopBaseOpacity(l)<1) vis.setAttribute("stroke-opacity",0.75); });
+    hit.addEventListener("mouseleave",()=>{ vis.setAttribute("stroke-opacity",loopBaseOpacity(l)); });
+    gLoops.appendChild(hit); gLoops.appendChild(vis);
+    return { l, hit, vis };
+  });
+
   const nodeEls = nodes.map(n => {
     const g=el("g",{class:"node-g"});
     const ring=el("rect",{class:"node-ring", x:n.x-TILE/2-4, y:n.y-TILE/2-4, width:TILE+8, height:TILE+8, rx:15});
@@ -424,6 +468,7 @@
 
   function redraw() {
     edgeEls.forEach(o=>{ const d=edgePath(o.e); o.hit.setAttribute("d",d); o.vis.setAttribute("d",d); });
+    loopEls.forEach(o=>{ const d=loopPath(nodeById[o.l.app]); o.hit.setAttribute("d",d); o.vis.setAttribute("d",d); });
     nodeEls.forEach(o=>{ const n=o.n;
       o.ring.setAttribute("x",n.x-TILE/2-4); o.ring.setAttribute("y",n.y-TILE/2-4);
       o.tile.setAttribute("x",n.x-TILE/2); o.tile.setAttribute("y",n.y-TILE/2);
@@ -456,6 +501,9 @@
     edgeEls.forEach(o=>{ let w=1.6+(o.e.volume/maxVol)*7;
       if((selType==="edge"&&selEdge===o.e)||(selType==="workflow"&&wfEdges.has(o.e))) w+=1.4;
       o.vis.setAttribute("stroke-opacity",edgeBaseOpacity(o.e)); o.vis.setAttribute("stroke-width",w.toFixed(1)); });
+    loopEls.forEach(o=>{ const active=selType==="workflow"&&selWf&&selWf.intra&&selWf.app0===o.l.app;
+      let w=1.6+(o.l.volume/maxVol)*7; if(active) w+=1.4;
+      o.vis.setAttribute("stroke-opacity",loopBaseOpacity(o.l)); o.vis.setAttribute("stroke-width",w.toFixed(1)); });
     nodeEls.forEach(o=>{ const hot=(selType==="node"&&selNode===o.n.id)||(selType==="workflow"&&wfNodes.has(o.n.id))||(selType==="edge"&&(selEdge.from===o.n.id||selEdge.to===o.n.id));
       const dim=selType!=="overview"&&!hot;
       o.ring.setAttribute("stroke",hot?"var(--accent)":"transparent");
@@ -468,21 +516,23 @@
   function selectOverview(){ selType="overview"; selEdge=selNode=selWf=null; setActive(null); clearFlow(); styleGraph(); renderFocus(); }
   function selectWorkflow(wf){ selType="workflow"; selWf=wf; selEdge=selNode=null;
     wfEdges=new Set(); wfNodes=new Set();
+    if(wf.intra) wfNodes.add(wf.app0);
     for(let i=0;i<wf.steps.length-1;i++){ const a=wf.steps[i].app,b=wf.steps[i+1].app; if(a===b) continue; wfNodes.add(a); wfNodes.add(b);
       const eo=edgeEls.find(o=>o.e.from===a&&o.e.to===b); if(eo) wfEdges.add(eo.e); }
     setActive(wf.id); clearFlow(); styleGraph(); renderFocus(); animateFlow(wf);
   }
 
-  let flowSeq=[];
   function positionFlow(){ /* dot re-reads path live in loop */ }
   function animateFlow(wf){ if(reduce) return;
-    flowSeq=[]; for(let i=0;i<wf.steps.length-1;i++){ const a=wf.steps[i].app,b=wf.steps[i+1].app; if(a===b) continue;
-      const eo=edgeEls.find(o=>o.e.from===a&&o.e.to===b); if(eo) flowSeq.push(eo); }
-    if(!flowSeq.length) return;
+    let paths=[];
+    if(wf.intra){ const lo=loopEls.find(o=>o.l.app===wf.app0); if(lo) paths=[lo.hit]; }
+    else { for(let i=0;i<wf.steps.length-1;i++){ const a=wf.steps[i].app,b=wf.steps[i+1].app; if(a===b) continue;
+      const eo=edgeEls.find(o=>o.e.from===a&&o.e.to===b); if(eo) paths.push(eo.hit); } }
+    if(!paths.length) return;
     const dot=el("circle",{class:"flow-dot",r:4.5,filter:"url(#glow)"}); gFlow.appendChild(dot);
     let seg=0,t=0;
-    (function loop(){ const o=flowSeq[seg]; const len=o.hit.getTotalLength(); const p=o.hit.getPointAtLength(t*len);
-      dot.setAttribute("cx",p.x); dot.setAttribute("cy",p.y); t+=0.022; if(t>=1){ t=0; seg=(seg+1)%flowSeq.length; }
+    (function loop(){ const p=paths[seg]; const len=p.getTotalLength(); const pt=p.getPointAtLength(t*len);
+      dot.setAttribute("cx",pt.x); dot.setAttribute("cy",pt.y); t+=0.022; if(t>=1){ t=0; seg=(seg+1)%paths.length; }
       flowRAF=requestAnimationFrame(loop); })();
   }
 
@@ -537,16 +587,17 @@
     focus.querySelectorAll(".backlink").forEach(l=>l.addEventListener("click",ev=>{ const wf=WORKFLOWS.find(w=>w.id===ev.currentTarget.dataset.wf); selectWorkflow(wf); scrollFeed(wf.id); }));
   }
   function focusWorkflow(wf){ const tot=wf.perWeek*wf.minEach, canAuto=wf.auto==="auto";
-    focus.innerHTML=`<div class="flabel"><span class="eyebrow">Workflow · discrete capture</span>${pill(wf.auto)}</div>
+    focus.innerHTML=`<div class="flabel"><span class="eyebrow">${wf.intra?"In-app loop · repeats":"Workflow · discrete capture"}</span>${pill(wf.auto)}</div>
       <h2>${esc(wf.name)}</h2><div class="fsub">trigger: ${esc(wf.trigger)}</div>
+      ${wf.intra&&wf.fileflow?`<div class="fileflow"><span class="ffl">file flow</span><span class="ff">${esc(wf.fileflow)}</span></div>`:""}
       <div class="statrow"><div class="stat"><div class="k">Frequency</div><div class="v">${esc(wf.freq)}</div></div>
         <div class="stat"><div class="k">Cost</div><div class="v">${tot}<small> min/wk</small></div></div></div>
-      <div class="eyebrow" style="margin:16px 0 8px">End-to-end steps</div>
+      <div class="eyebrow" style="margin:16px 0 8px">${wf.intra?"Steps · work done in "+esc(APPS[wf.app0].name):"End-to-end steps"}</div>
       <div class="steps">${wf.steps.map(s=>{const a=APPS[s.app];return `<div class="step"><div class="badge">${logo(s.app,30)}</div>
         <div><div class="an"><b>${esc(a.name)}</b> — ${esc(s.action)}</div>
-        <div class="via">via ${VIA_LABEL[s.via]||s.via}${s.sample?` · <span class="pv">${esc(s.sample)}</span>`:""}</div></div></div>`;}).join("")}</div>
+        <div class="via">via ${VIA_LABEL[s.via]||s.via}${s.file?` · <span class="fchip">${esc(s.file)}</span>`:""}${s.sample?` · <span class="pv">${esc(s.sample)}</span>`:""}</div></div></div>`;}).join("")}</div>
       ${canAuto?`<button class="cta" type="button">Build this automation <span class="arrow">→</span></button>
-        <div class="note">Steps are stable across captures and every app has an API — strong candidate. AI drafts each step; the send stays behind your confirmation.</div>`
+        <div class="note">${wf.intra?"Repetitive in-app work with a stable file flow — ideal for a recorded macro / script the tool generates and runs for you.":"Steps are stable across captures and every app has an API — strong candidate. AI drafts each step; the send stays behind your confirmation."}</div>`
         :`<div class="note" style="margin-top:15px">Marked <b>assist</b>: this task branches or needs judgment. Best as an AI-drafted starting point you review — not full automation.</div>`}
       <div class="backlink" id="clearSel">← back to overview</div>`;
     focus.querySelector("#clearSel").addEventListener("click",selectOverview);
@@ -560,7 +611,9 @@
   const feedCards={};
   ranked.forEach(({w,tot},i)=>{
     const card=document.createElement("div"); card.className="flow"; card.dataset.wf=w.id;
-    const chain=w.steps.map((s,j)=>`${logo(s.app,22)}${j<w.steps.length-1?'<span class="sep">→</span>':""}`).join("");
+    const chain = w.intra
+      ? `${logo(w.app0,22)}<span class="sep" title="repeats inside the app">↻</span>`
+      : w.steps.map((s,j)=>`${logo(s.app,22)}${j<w.steps.length-1?'<span class="sep">→</span>':""}`).join("");
     card.innerHTML=`<div class="r1"><div class="rk">${String(i+1).padStart(2,"0")}</div>
         <div><div class="nm">${esc(w.name)}</div><div class="sub">${esc(w.freq)} · ${w.minEach}m each</div></div>${pill(w.auto)}</div>
       <div class="meter"><div class="track2"><i style="width:${Math.round(tot/maxTot*100)}%;background:${AUTO_VAR[w.auto]}"></i></div>
@@ -577,7 +630,9 @@
   const wfCards={};
   ranked.forEach(({w})=>{
     const card=document.createElement("div"); card.className="wf"; card.dataset.wf=w.id;
-    const chain=w.steps.map((s,j)=>`${logo(s.app,26)}${j<w.steps.length-1?'<span class="sep" style="color:var(--faint);font-family:var(--mono)">→</span>':""}`).join("");
+    const chain = w.intra
+      ? `${logo(w.app0,26)}<span class="sep" style="color:var(--accent);font-family:var(--mono);font-size:15px" title="repeats inside the app">↻</span>`
+      : w.steps.map((s,j)=>`${logo(s.app,26)}${j<w.steps.length-1?'<span class="sep" style="color:var(--faint);font-family:var(--mono)">→</span>':""}`).join("");
     card.innerHTML=`<div class="r1"><div class="nm">${esc(w.name)}</div>${pill(w.auto)}</div>
       <div class="metrics"><div><div class="k">Freq</div><div class="v">${esc(w.freq)}</div></div>
         <div><div class="k">Each</div><div class="v">${w.minEach}m</div></div>
@@ -611,7 +666,6 @@
   }
   function renderLiveReal(s){
     liveReal.style.display="block";
-    const rec = (s.recent||[]).map(r=>`<div class="lr-ev"><span class="k2">${esc(r.kind)}</span><span class="t2">${esc(r.app)}</span><span class="d2">${esc(r.kind==="clipboard"?r.clip:r.title)}</span></div>`).join("");
     liveReal.innerHTML =
       `<div class="lr-top"><span class="eyebrow">Live capture · this laptop</span>
         <span class="pill ${running?"auto":"skip"}"><span class="d"></span>${running?"capturing":"stopped"}</span></div>
@@ -621,8 +675,7 @@
          <div><div class="k">Apps</div><div class="v">${s.apps??0}</div></div>
          <div><div class="k">Hand-offs</div><div class="v">${s.handoffs??0}</div></div>
        </div>
-       ${rec ? `<div class="eyebrow" style="margin:14px 0 7px">Most recent</div><div class="lr-recent">${rec}</div>`
-             : `<div class="note" style="margin-top:12px">${running?"Waiting for activity — switch windows or copy something.":"Click “Start mapping” to begin capturing."}</div>`}`;
+       ${running ? "" : '<div class="note" style="margin-top:12px">Capture is stopped. Click “Start mapping” to begin.</div>'}`;
   }
   function showDemoNote(){
     liveReal.style.display="block";
