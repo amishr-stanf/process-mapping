@@ -28,8 +28,22 @@ from urllib.parse import urlsplit
 import logger
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "activity.db")
-UI = os.path.join(HERE, "ui", "prototype.html")
+FROZEN = getattr(sys, "frozen", False)       # True when running as a PyInstaller .exe
+BUNDLE = getattr(sys, "_MEIPASS", HERE)       # where bundled data files live
+
+
+def _data_dir():
+    """Writable location for activity.db (per-user AppData when installed)."""
+    if FROZEN:
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        d = os.path.join(base, "workflow-mapper")
+        os.makedirs(d, exist_ok=True)
+        return d
+    return HERE  # in dev, keep the DB next to the source
+
+
+DB = os.path.join(_data_dir(), "activity.db")
+UI = os.path.join(BUNDLE, "ui", "prototype.html")
 
 capture = logger.Capture(DB)
 
@@ -185,6 +199,13 @@ class Handler(BaseHTTPRequestHandler):
         pass  # quiet
 
 
+def build_server(port=8765):
+    """Create the loopback server (and ensure the DB schema exists)."""
+    logger.open_db(DB).close()  # create the DB/schema up front
+    ensure_web_schema()         # create the web_events table up front
+    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+
+
 def main():
     ap = argparse.ArgumentParser(description="workflow-mapper local server")
     ap.add_argument("--port", type=int, default=8765)
@@ -194,10 +215,8 @@ def main():
     if sys.platform != "win32":
         print("The capture logger targets Windows; the UI will still serve.", file=sys.stderr)
 
-    logger.open_db(DB).close()  # create the DB/schema up front
-    ensure_web_schema()         # create the web_events table up front
     url = f"http://127.0.0.1:{args.port}"
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    server = build_server(args.port)
     print(f"workflow-mapper running at {url}")
     print("Open it in your browser, then click “Start mapping”. Ctrl+C to quit.")
     if not args.no_browser:

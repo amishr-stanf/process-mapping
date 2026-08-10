@@ -12,6 +12,12 @@ __pycache__/
 venv/
 env/
 
+# Build artifacts (distribute the exe via GitHub Releases, not git)
+build/
+dist/
+*.spec
+packaging/icon.ico
+
 # OS / editor
 .DS_Store
 Thumbs.db

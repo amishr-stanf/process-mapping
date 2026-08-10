@@ -20,6 +20,28 @@ Everything runs on your laptop. Captured data stays in a local SQLite file
 only actual content capture is a clipboard preview, capped at 80 chars and
 stored alongside a hash. Disable it entirely with `--no-clip-text`.
 
+## Install (beta testers)
+
+No Python needed — it's a single Windows app.
+
+1. Download `workflow-mapper.exe` (from the sender / GitHub Releases).
+2. Double-click it. Windows SmartScreen may warn about an unknown publisher
+   (the build isn't code-signed yet) — choose **More info → Run anyway**.
+3. It starts in the system tray (gold icon) and opens the dashboard. Right-click
+   the tray icon for Start / Stop / Quit.
+4. For web capture, also load the browser extension (see below).
+
+Your data stays on your machine — see [PRIVACY.md](PRIVACY.md).
+
+## Build the app (developers)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+```
+
+Produces `dist\workflow-mapper.exe` (one-file, no console). Requires
+`pip install pyinstaller pystray Pillow`.
+
 ## Run the app (recommended)
 
 ```bash
