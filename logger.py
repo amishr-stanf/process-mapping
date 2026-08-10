@@ -1,8 +1,8 @@
 """
 Phase 0 activity logger for the workflow-mapper project.
 
-Captures, on Windows, the minimum signal needed to later reconstruct
-end-to-end cross-app tasks:
+Captures the minimum signal needed to later reconstruct end-to-end cross-app
+tasks:
 
   * focus      - foreground app + window title changes (the backbone;
                  window titles carry most of the semantic content for free)
@@ -15,7 +15,7 @@ this machine. No keystrokes, no screenshots. Clipboard text is reduced to a
 hash plus a short capped preview so we can detect the *same data* moving
 between apps without retaining full content.
 
-Pure ctypes against the Win32 API -- no third-party dependencies.
+Cross-platform via the `sensors` dispatcher (Windows / macOS backends).
 
 Usage:
     python logger.py                 # run forever (Ctrl+C to stop)
@@ -25,15 +25,14 @@ Usage:
 """
 
 import argparse
-import ctypes
-import hashlib
 import os
 import signal
 import sqlite3
 import sys
 import threading
 import time
-from ctypes import wintypes
+
+import sensors
 
 # --------------------------------------------------------------------------
 # Config (safe defaults; override via CLI)
@@ -42,135 +41,6 @@ DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "activity.
 POLL_INTERVAL = 1.0          # seconds between polls
 IDLE_THRESHOLD = 60.0        # seconds of no input -> "idle"
 CLIP_PREVIEW_CHARS = 80      # max chars of clipboard text kept as preview (0 = none)
-
-# --------------------------------------------------------------------------
-# Win32 plumbing
-# --------------------------------------------------------------------------
-user32 = ctypes.windll.user32
-kernel32 = ctypes.windll.kernel32
-
-# Set restypes/argtypes explicitly -- critical on 64-bit so HANDLE/pointer
-# values are not silently truncated to 32 bits (which would crash the reads).
-user32.GetForegroundWindow.restype = wintypes.HWND
-user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
-user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-user32.GetClipboardSequenceNumber.restype = wintypes.DWORD
-user32.IsClipboardFormatAvailable.argtypes = [wintypes.UINT]
-user32.OpenClipboard.argtypes = [wintypes.HWND]
-user32.GetClipboardData.restype = wintypes.HANDLE
-user32.GetClipboardData.argtypes = [wintypes.UINT]
-
-kernel32.OpenProcess.restype = wintypes.HANDLE
-kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-kernel32.QueryFullProcessImageNameW.argtypes = [
-    wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)
-]
-kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-kernel32.GlobalLock.restype = ctypes.c_void_p
-kernel32.GlobalLock.argtypes = [wintypes.HANDLE]
-kernel32.GlobalUnlock.argtypes = [wintypes.HANDLE]
-kernel32.GetTickCount.restype = wintypes.DWORD
-
-PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-CF_UNICODETEXT = 13
-CF_HDROP = 15
-CF_DIB = 8
-CF_BITMAP = 2
-
-
-class LASTINPUTINFO(ctypes.Structure):
-    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
-
-
-def get_foreground():
-    """Return (process_name, window_title) for the focused window, or (None, None)."""
-    hwnd = user32.GetForegroundWindow()
-    if not hwnd:
-        return None, None
-    length = user32.GetWindowTextLengthW(hwnd)
-    buf = ctypes.create_unicode_buffer(length + 1)
-    user32.GetWindowTextW(hwnd, buf, length + 1)
-    title = buf.value
-
-    pid = wintypes.DWORD()
-    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    return process_name(pid.value), title
-
-
-def process_name(pid):
-    """Best-effort executable name (e.g. 'chrome.exe') for a pid."""
-    if not pid:
-        return None
-    h = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-    if not h:
-        return None
-    try:
-        size = wintypes.DWORD(4096)
-        buf = ctypes.create_unicode_buffer(size.value)
-        if kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
-            return buf.value.rsplit("\\", 1)[-1]
-    finally:
-        kernel32.CloseHandle(h)
-    return None
-
-
-def idle_seconds():
-    """Seconds since the last keyboard/mouse input."""
-    lii = LASTINPUTINFO()
-    lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
-    if not user32.GetLastInputInfo(ctypes.byref(lii)):
-        return 0.0
-    return (kernel32.GetTickCount() - lii.dwTime) / 1000.0
-
-
-def read_clipboard(preview_chars=CLIP_PREVIEW_CHARS):
-    """
-    Inspect the clipboard without mutating it.
-
-    Returns (clip_type, length, sha256_hash, preview). Only text content is
-    read; for files/images we record the type only. Any failure degrades
-    gracefully to (type-or-None, None, None, None) -- never raises.
-    """
-    try:
-        if user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
-            ctype = "text"
-        elif user32.IsClipboardFormatAvailable(CF_HDROP):
-            return "files", None, None, None
-        elif user32.IsClipboardFormatAvailable(CF_DIB) or user32.IsClipboardFormatAvailable(CF_BITMAP):
-            return "image", None, None, None
-        else:
-            return None, None, None, None
-    except Exception:
-        return None, None, None, None
-
-    # Read the unicode text with proper pointer handling.
-    text = None
-    if not user32.OpenClipboard(None):
-        return "text", None, None, None
-    try:
-        handle = user32.GetClipboardData(CF_UNICODETEXT)
-        if handle:
-            ptr = kernel32.GlobalLock(handle)
-            if ptr:
-                try:
-                    text = ctypes.wstring_at(ptr)
-                finally:
-                    kernel32.GlobalUnlock(handle)
-    except Exception:
-        text = None
-    finally:
-        user32.CloseClipboard()
-
-    if text is None:
-        return "text", None, None, None
-
-    digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
-    preview = None
-    if preview_chars > 0:
-        # Collapse whitespace so previews stay compact and single-line.
-        preview = " ".join(text.split())[:preview_chars]
-    return "text", len(text), digest, preview
 
 
 # --------------------------------------------------------------------------
@@ -181,7 +51,7 @@ CREATE TABLE IF NOT EXISTS events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts          REAL    NOT NULL,        -- unix epoch seconds
     kind        TEXT    NOT NULL,        -- focus | clipboard | idle_start | idle_end
-    app         TEXT,                    -- process name at time of event
+    app         TEXT,                    -- app / process name at time of event
     title       TEXT,                    -- window title (primary semantic signal)
     clip_type   TEXT,                    -- text | files | image
     clip_len    INTEGER,
@@ -247,12 +117,12 @@ class Capture:
         # SQLite connections are thread-affine: open ours inside the thread.
         conn = open_db(self.db_path)
         last_focus = (None, None)
-        last_clip_seq = user32.GetClipboardSequenceNumber()
+        last_clip_seq = sensors.clipboard_sequence()
         is_idle = False
         try:
             while not self._stop.is_set():
-                idle = idle_seconds()
-                app, title = get_foreground()
+                idle = sensors.idle_seconds()
+                app, title = sensors.get_foreground()
                 if idle >= IDLE_THRESHOLD and not is_idle:
                     is_idle = True
                     log_event(conn, "idle_start", app=app, title=title)
@@ -262,10 +132,10 @@ class Capture:
                 if not is_idle and (app, title) != last_focus and (app or title):
                     last_focus = (app, title)
                     log_event(conn, "focus", app=app, title=title)
-                seq = user32.GetClipboardSequenceNumber()
+                seq = sensors.clipboard_sequence()
                 if seq != last_clip_seq:
                     last_clip_seq = seq
-                    ctype, clen, chash, cprev = read_clipboard(self.preview_chars)
+                    ctype, clen, chash, cprev = sensors.read_clipboard(self.preview_chars)
                     if ctype is not None:
                         log_event(conn, "clipboard", app=app, title=title,
                                   clip_type=ctype, clip_len=clen, clip_hash=chash, clip_preview=cprev)
@@ -281,7 +151,7 @@ def run(db_path, seconds, verbose):
     conn = open_db(db_path)
 
     last_focus = (None, None)          # (app, title)
-    last_clip_seq = user32.GetClipboardSequenceNumber()
+    last_clip_seq = sensors.clipboard_sequence()
     is_idle = False
 
     start = time.time()
@@ -291,7 +161,7 @@ def run(db_path, seconds, verbose):
         stop["flag"] = True
     signal.signal(signal.SIGINT, _handle_sigint)
 
-    print(f"[logger] writing to {db_path}")
+    print(f"[logger] platform: {sensors.platform_name()} | writing to {db_path}")
     print(f"[logger] preview chars: {CLIP_PREVIEW_CHARS} | idle threshold: {IDLE_THRESHOLD}s")
     print("[logger] capturing... (Ctrl+C to stop)")
 
@@ -299,18 +169,18 @@ def run(db_path, seconds, verbose):
         now = time.time()
 
         # --- idle / active transitions -------------------------------------
-        idle = idle_seconds()
-        app, title = get_foreground()
+        idle = sensors.idle_seconds()
+        app, title = sensors.get_foreground()
         if idle >= IDLE_THRESHOLD and not is_idle:
             is_idle = True
             log_event(conn, "idle_start", app=app, title=title)
             if verbose:
-                print(f"  [idle_start]")
+                print("  [idle_start]")
         elif idle < IDLE_THRESHOLD and is_idle:
             is_idle = False
             log_event(conn, "idle_end", app=app, title=title)
             if verbose:
-                print(f"  [idle_end]")
+                print("  [idle_end]")
 
         # --- focus changes (only while active) -----------------------------
         if not is_idle and (app, title) != last_focus and (app or title):
@@ -320,10 +190,10 @@ def run(db_path, seconds, verbose):
                 print(f"  [focus] {app} :: {title}")
 
         # --- clipboard changes ---------------------------------------------
-        seq = user32.GetClipboardSequenceNumber()
+        seq = sensors.clipboard_sequence()
         if seq != last_clip_seq:
             last_clip_seq = seq
-            ctype, clen, chash, cprev = read_clipboard(CLIP_PREVIEW_CHARS)
+            ctype, clen, chash, cprev = sensors.read_clipboard(CLIP_PREVIEW_CHARS)
             if ctype is not None:
                 log_event(conn, "clipboard", app=app, title=title,
                           clip_type=ctype, clip_len=clen, clip_hash=chash, clip_preview=cprev)
@@ -352,8 +222,8 @@ def main():
 
     CLIP_PREVIEW_CHARS = 0 if args.no_clip_text else max(0, args.preview_chars)
 
-    if sys.platform != "win32":
-        print("This logger targets Windows.", file=sys.stderr)
+    if not sensors.supported():
+        print(f"Capture isn't supported on this platform ({sys.platform}).", file=sys.stderr)
         sys.exit(1)
 
     run(args.db, args.seconds, args.verbose)

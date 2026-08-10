@@ -17,6 +17,9 @@ build/
 dist/
 *.spec
 packaging/icon.ico
+packaging/icon-512.png
+packaging/icon.icns
+packaging/icon.iconset/
 
 # OS / editor
 .DS_Store

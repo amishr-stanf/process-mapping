@@ -33,14 +33,35 @@ No Python needed — it's a single Windows app.
 
 Your data stays on your machine — see [PRIVACY.md](PRIVACY.md).
 
+### macOS
+
+macOS is supported via a separate capture backend (PyObjC). On first launch,
+grant permissions in **System Settings → Privacy & Security**:
+- **Accessibility** — reliable foreground app/window detection
+- **Screen Recording** — needed for window *titles* (the app name works without it)
+
+Data is stored at `~/Library/Application Support/workflow-mapper/activity.db`.
+
 ## Build the app (developers)
 
+**Windows:**
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
+Requires `pip install pyinstaller pystray Pillow`. Produces `dist\workflow-mapper.exe`.
 
-Produces `dist\workflow-mapper.exe` (one-file, no console). Requires
-`pip install pyinstaller pystray Pillow`.
+**macOS:**
+```bash
+bash packaging/build_mac.sh
+```
+Requires `pip install pyinstaller pystray Pillow pyobjc-framework-Cocoa pyobjc-framework-Quartz`.
+Produces `dist/workflow-mapper.app`.
+
+### Architecture note
+
+Capture is split by platform: `sensors.py` dispatches to `sensors_win.py`
+(Win32 ctypes) or `sensors_mac.py` (PyObjC). Everything else — the server
+(`app.py`), tray (`tray.py`), UI, and browser extension — is cross-platform.
 
 ## Run the app (recommended)
 

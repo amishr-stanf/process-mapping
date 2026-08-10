@@ -41,6 +41,10 @@ def main():
         p = os.path.join(EXT, f"icon{sz}.png")
         draw(sz).save(p)
         print("wrote", p)
+    # 512px master for building a macOS .icns
+    p512 = os.path.join(HERE, "icon-512.png")
+    draw(512).save(p512)
+    print("wrote", p512)
 
 
 if __name__ == "__main__":

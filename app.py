@@ -33,9 +33,12 @@ BUNDLE = getattr(sys, "_MEIPASS", HERE)       # where bundled data files live
 
 
 def _data_dir():
-    """Writable location for activity.db (per-user AppData when installed)."""
+    """Writable per-user location for activity.db when installed."""
     if FROZEN:
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        if sys.platform == "darwin":
+            base = os.path.expanduser("~/Library/Application Support")
+        else:
+            base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
         d = os.path.join(base, "workflow-mapper")
         os.makedirs(d, exist_ok=True)
         return d
@@ -211,9 +214,6 @@ def main():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
-
-    if sys.platform != "win32":
-        print("The capture logger targets Windows; the UI will still serve.", file=sys.stderr)
 
     url = f"http://127.0.0.1:{args.port}"
     server = build_server(args.port)

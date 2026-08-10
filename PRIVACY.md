@@ -25,8 +25,9 @@ data never leaves your computer.
 
 ## Where your data goes
 
-- Stored in a local SQLite file on your machine
-  (`%LOCALAPPDATA%\workflow-mapper\activity.db`).
+- Stored in a local SQLite file on your machine — Windows:
+  `%LOCALAPPDATA%\workflow-mapper\activity.db`; macOS:
+  `~/Library/Application Support/workflow-mapper/activity.db`.
 - The app runs a server bound only to `127.0.0.1` (loopback). It is not
   reachable from your network or the internet.
 - **No telemetry, no analytics, no external servers, no accounts.** The
