@@ -1,0 +1,39 @@
+workflow-mapper — install guide (Windows)
+==========================================
+
+This app maps how you work across your apps so repetitive tasks can later be
+automated. It runs entirely on your own computer — nothing you do is uploaded
+anywhere. (See PRIVACY.txt.)
+
+It's beta software and isn't code-signed yet, so Windows will show a warning
+the first time. That's expected.
+
+
+1) RUN THE APP
+--------------
+  - Double-click  workflow-mapper.exe
+  - If you see "Windows protected your PC":
+        click "More info"  ->  "Run anyway"
+  - A gold icon appears in your system tray (bottom-right, by the clock),
+    and the dashboard opens in your browser.
+  - Right-click the tray icon any time for:  Open dashboard / Start / Stop / Quit
+  - In the dashboard, click "Start mapping" to begin capturing.
+
+
+2) (OPTIONAL) ALSO CAPTURE WEB APPS — Chrome extension
+------------------------------------------------------
+  - Open Chrome and go to:   chrome://extensions
+  - Turn on "Developer mode" (toggle, top-right)
+  - Click "Load unpacked" and select the "browser-extension" folder
+    that came in this zip
+  - Click the puzzle-piece icon in Chrome and pin "workflow-mapper capture".
+    It shows "server connected" whenever the app is running.
+
+
+STOPPING / REMOVING
+-------------------
+  - Stop everything:  right-click the tray icon  ->  Quit
+  - Delete all captured data:  quit the app, then delete the folder
+        %LOCALAPPDATA%\workflow-mapper
+
+Questions or weird behavior? Expected — it's an early beta. Tell the sender.
