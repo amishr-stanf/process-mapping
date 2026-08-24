@@ -5,10 +5,9 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)   # repo root
 
-if (-not (Test-Path "dist\workflow-mapper.exe")) {
-    Write-Host "exe not found - building it first..."
-    powershell -ExecutionPolicy Bypass -File packaging\build.ps1
-}
+# Always rebuild so the bundle can never ship a stale exe.
+Write-Host "Building a fresh exe..."
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 
 $stage = "dist\bundle"
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue

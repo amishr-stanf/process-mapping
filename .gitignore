@@ -5,6 +5,9 @@ activity.db
 *.sqlite
 *.sqlite3
 
+# Local config — may contain the user's own API key
+config.json
+
 # Python
 __pycache__/
 *.py[cod]

@@ -190,6 +190,35 @@
   .wf .metrics .k { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
   .wf .metrics .v { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; margin-top: 2px; }
 
+  /* Settings button + modal */
+  .iconbtn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+    border-radius: 10px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+    cursor: pointer; font-size: 15px; line-height: 1; }
+  .iconbtn:hover { color: var(--text); border-color: var(--line-2); }
+  .modal { position: fixed; inset: 0; background: rgba(4,6,12,0.66); display: none; align-items: center;
+    justify-content: center; z-index: 50; padding: 20px; }
+  .modal.open { display: flex; }
+  .modal .card { width: 100%; max-width: 460px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 16px; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
+  .modal h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.01em; }
+  .modal .lead { color: var(--muted); font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
+  .modal .byok { background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 10px; padding: 11px 13px; font-size: 12.5px; color: var(--text); margin-bottom: 18px; line-height: 1.5; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
+  .field input, .field select { width: 100%; background: var(--card); border: 1px solid var(--line);
+    border-radius: 9px; padding: 9px 11px; color: var(--text); font-size: 13px; font-family: var(--sans); }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+  .field .hint { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 5px; }
+  .field a { color: var(--accent); }
+  .modal .actions { display: flex; gap: 9px; align-items: center; margin-top: 18px; }
+  .btn { border: none; border-radius: 9px; padding: 9px 15px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: var(--sans); }
+  .btn.primary { color: #1c1206; background: linear-gradient(180deg, var(--accent-2), var(--accent)); }
+  .btn.ghost { color: var(--text); background: var(--panel-2); border: 1px solid var(--line); }
+  .modal .status { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto;
+    text-align: right; max-width: 190px; overflow-wrap: anywhere; }
+
   @media (max-width: 980px) {
     .app { grid-template-columns: 1fr; grid-template-rows: 58px 46vh minmax(0,1fr) 190px;
            grid-template-areas: "top" "graph" "flows" "drawer"; }
@@ -257,6 +286,7 @@
       <div class="item"><span class="sw" style="background:var(--assist)"></span>Assist / draft</div>
       <div class="item"><span class="sw" style="background:var(--skip)"></span>Manual</div>
     </div>
+    <button class="iconbtn" id="settingsBtn" type="button" title="Settings — your API key">⚙</button>
     <button class="capbtn" id="capBtn" type="button"><span class="ic">▶</span><span id="capLabel">Start mapping</span></button>
     <div class="live" id="livePill"><span class="dot"></span><span id="liveText">demo data</span></div>
   </header>
@@ -278,6 +308,38 @@
       <span style="flex:1"></span><span class="eyebrow">click to trace on map →</span></div>
     <div class="track" id="track"></div>
   </section>
+</div>
+
+<div class="modal" id="settingsModal">
+  <div class="card">
+    <h2>Settings</h2>
+    <div class="lead">Capture, the graph, and reports work fully with no account and no cost. AI features (flow suggestions &amp; automation) are optional — and when you use them they run on <b>your own</b> API key.</div>
+    <div class="byok"><b>Bring your own key.</b> Your key is stored only on this computer and used only to call the provider you pick. It is never sent anywhere else — whoever shared this tool never sees your data and never pays for your usage.</div>
+    <div class="field">
+      <label>Provider</label>
+      <select id="setProvider">
+        <option value="">None — AI features off</option>
+        <option value="anthropic">Anthropic (Claude)</option>
+        <option value="openai">OpenAI</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Your API key</label>
+      <input id="setKey" type="password" placeholder="paste your own key (blank = keep current)" autocomplete="off" spellcheck="false" />
+      <div class="hint" id="setKeyHint">no key set</div>
+      <div class="hint">Get one: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic keys</a> · <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI keys</a></div>
+    </div>
+    <div class="field">
+      <label>Model</label>
+      <input id="setModel" type="text" placeholder="e.g. claude-sonnet-5" spellcheck="false" />
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="setSave" type="button">Save</button>
+      <button class="btn ghost" id="setTest" type="button">Test key</button>
+      <button class="btn ghost" id="setClose" type="button">Close</button>
+      <span class="status" id="setStatus"></span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -597,7 +659,7 @@
         <div><div class="an"><b>${esc(a.name)}</b> — ${esc(s.action)}</div>
         <div class="via">via ${VIA_LABEL[s.via]||s.via}${s.file?` · <span class="fchip">${esc(s.file)}</span>`:""}${s.sample?` · <span class="pv">${esc(s.sample)}</span>`:""}</div></div></div>`;}).join("")}</div>
       ${canAuto?`<button class="cta" type="button">Build this automation <span class="arrow">→</span></button>
-        <div class="note">${wf.intra?"Repetitive in-app work with a stable file flow — ideal for a recorded macro / script the tool generates and runs for you.":"Steps are stable across captures and every app has an API — strong candidate. AI drafts each step; the send stays behind your confirmation."}</div>`
+        <div class="note">${wf.intra?"Repetitive in-app work with a stable file flow — ideal for a recorded macro / script the tool generates and runs for you.":"Steps are stable across captures and every app has an API — strong candidate. AI drafts each step; the send stays behind your confirmation."} <span class="link" data-open-settings>Uses your own AI key →</span></div>`
         :`<div class="note" style="margin-top:15px">Marked <b>assist</b>: this task branches or needs judgment. Best as an AI-drafted starting point you review — not full automation.</div>`}
       <div class="backlink" id="clearSel">← back to overview</div>`;
     focus.querySelector("#clearSel").addEventListener("click",selectOverview);
@@ -702,6 +764,53 @@
       LIVE = false; liveText.textContent = "demo data";
     }
   }
+
+  // ---- Settings (bring-your-own-key) -----------------------------------
+  const DEFAULT_MODELS = { anthropic: "claude-sonnet-5", openai: "gpt-4o" };
+  const modal = document.getElementById("settingsModal");
+  const provEl = document.getElementById("setProvider");
+  const keyEl = document.getElementById("setKey");
+  const modelEl = document.getElementById("setModel");
+  const hintEl = document.getElementById("setKeyHint");
+  const statusEl = document.getElementById("setStatus");
+
+  async function apiPost(path, body) {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+    if (!r.ok) throw new Error("bad");
+    return r.json();
+  }
+  function showKeyState(c) {
+    hintEl.textContent = c.key_set ? `key set (${c.source})  ${c.key_hint}` : "no key set — AI features off";
+  }
+  async function openSettings() {
+    modal.classList.add("open"); statusEl.textContent = "";
+    try {
+      const c = await api("/api/config");
+      provEl.value = c.provider || ""; modelEl.value = c.model || ""; keyEl.value = ""; showKeyState(c);
+    } catch (e) { hintEl.textContent = "start the app (python app.py) to save settings"; }
+  }
+  function closeSettings() { modal.classList.remove("open"); }
+  document.getElementById("settingsBtn").addEventListener("click", openSettings);
+  document.getElementById("setClose").addEventListener("click", closeSettings);
+  modal.addEventListener("click", e => { if (e.target === modal) closeSettings(); });
+  document.addEventListener("click", e => { if (e.target.closest("[data-open-settings]")) openSettings(); });
+  provEl.addEventListener("change", () => { if (!modelEl.value) modelEl.value = DEFAULT_MODELS[provEl.value] || ""; });
+
+  document.getElementById("setSave").addEventListener("click", async () => {
+    try {
+      const body = { provider: provEl.value || null, model: modelEl.value };
+      if (keyEl.value) body.api_key = keyEl.value;
+      const c = await apiPost("/api/config", body);
+      keyEl.value = ""; showKeyState(c); statusEl.textContent = "Saved.";
+    } catch (e) { statusEl.textContent = "Save failed — is the app running?"; }
+  });
+  document.getElementById("setTest").addEventListener("click", async () => {
+    statusEl.textContent = "Testing… (uses your key)";
+    try {
+      const r = await apiPost("/api/ai/test", {});
+      statusEl.textContent = r.ok ? `✓ works — replied “${r.reply}”` : `✗ ${r.error}`;
+    } catch (e) { statusEl.textContent = "Test failed — is the app running?"; }
+  });
 
   // ---- Go ---------------------------------------------------------------
   redraw(); selectOverview(); connect();

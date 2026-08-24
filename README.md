@@ -74,6 +74,23 @@ exposed to your network), opens the UI in your browser, and gives you a
 **Start mapping** button that turns capture on/off and shows live stats from
 your own `activity.db`. All data stays on your laptop.
 
+## AI features — bring your own key (BYOK)
+
+Capture, the graph, and the reports are **fully deterministic** — no AI, no
+account, no cost. They work for everyone out of the box.
+
+The optional AI layer (flow suggestions and automation synthesis) runs on
+**your own** API key:
+
+- Open **⚙ Settings** in the dashboard, pick a provider (Anthropic or OpenAI),
+  paste your key, and **Save** (or **Test key** to verify it).
+- The key is stored only on your machine (`config.json` next to the database)
+  and is used only to call the provider you chose. You can also set it via the
+  `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` environment variable.
+- There is **no bundled key**. Whoever shared this tool with you never sees
+  your data and never pays for your usage — every AI call is billed to the key
+  on your machine.
+
 ## Capture web actions (Chrome extension)
 
 The OS logger can't see inside web apps (Salesforce, web Gmail, internal

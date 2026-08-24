@@ -40,6 +40,16 @@ data never leaves your computer.
 - To delete everything captured, quit the app and delete
   `%LOCALAPPDATA%\workflow-mapper\activity.db`.
 
+## AI features and your API key
+
+AI features are optional and off until you add your own API key in Settings.
+
+- The key is stored only on your machine (`config.json`, next to the database).
+- It is sent only to the provider you choose (Anthropic or OpenAI) when you use
+  an AI feature, and nowhere else.
+- There is no shared or bundled key. The person who shared this tool never sees
+  your activity and never pays for your AI usage.
+
 ## Open source
 
 The full source is available so you can verify all of the above:

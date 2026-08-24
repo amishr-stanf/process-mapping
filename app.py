@@ -25,27 +25,14 @@ from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
+import ai
+import config
 import logger
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FROZEN = getattr(sys, "frozen", False)       # True when running as a PyInstaller .exe
 BUNDLE = getattr(sys, "_MEIPASS", HERE)       # where bundled data files live
 
-
-def _data_dir():
-    """Writable per-user location for activity.db when installed."""
-    if FROZEN:
-        if sys.platform == "darwin":
-            base = os.path.expanduser("~/Library/Application Support")
-        else:
-            base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-        d = os.path.join(base, "workflow-mapper")
-        os.makedirs(d, exist_ok=True)
-        return d
-    return HERE  # in dev, keep the DB next to the source
-
-
-DB = os.path.join(_data_dir(), "activity.db")
+DB = os.path.join(config.data_dir(), "activity.db")
 UI = os.path.join(BUNDLE, "ui", "prototype.html")
 
 capture = logger.Capture(DB)
@@ -180,6 +167,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, "<!doctype html><meta charset=\"utf-8\">\n" + html, "text/html")
         if self.path == "/api/status":
             return self._json(status_payload())
+        if self.path == "/api/config":
+            return self._json(config.public_status())
         if self.path == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
         self._send(404, {"error": "not found"} if False else "not found", "text/plain")
@@ -196,6 +185,22 @@ class Handler(BaseHTTPRequestHandler):
             events = body.get("events") if isinstance(body, dict) else None
             n = ingest_web(events) if events else 0
             return self._json({"stored": n})
+        if self.path == "/api/config":
+            body = self._read_json() or {}
+            status = config.update_ai(
+                provider=body.get("provider"),
+                api_key=body.get("api_key"),
+                model=body.get("model"),
+                clear_key=bool(body.get("clear_key")),
+            )
+            return self._json(status)
+        if self.path == "/api/ai/test":
+            # Uses the local user's OWN key — billed to them, never the author.
+            try:
+                reply = ai.test_key()
+                return self._json({"ok": True, "reply": reply})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)})
         self._send(404, "not found", "text/plain")
 
     def log_message(self, *args):
