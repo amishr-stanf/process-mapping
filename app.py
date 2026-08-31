@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 import ai
 import config
 import logger
+import mining
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUNDLE = getattr(sys, "_MEIPASS", HERE)       # where bundled data files live
@@ -169,6 +170,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(status_payload())
         if self.path == "/api/config":
             return self._json(config.public_status())
+        if self.path.split("?")[0] == "/api/flows":
+            # Deterministic mining; add ?review=1 for the AI pass (needs a key).
+            review = "review=1" in self.path
+            data = mining.mine(DB, review=review)
+            data["generated_ts"] = time.time()
+            return self._json(data)
         if self.path == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
         self._send(404, {"error": "not found"} if False else "not found", "text/plain")
