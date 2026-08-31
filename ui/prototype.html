@@ -92,6 +92,19 @@
   .graph svg.stage { width: 100%; height: 100%; display: block; }
   .graph .hint { position: absolute; left: 18px; bottom: 14px; font-family: var(--mono); font-size: 11px;
     color: var(--faint); pointer-events: none; }
+  .samplebadge { position: absolute; left: 16px; top: 14px; z-index: 2; font-family: var(--mono); font-size: 10px;
+    letter-spacing: .12em; color: var(--assist); border: 1px solid color-mix(in srgb, var(--assist) 40%, transparent);
+    background: color-mix(in srgb, var(--assist) 12%, var(--panel)); border-radius: 6px; padding: 3px 9px; pointer-events: none; }
+  #realFlows { margin-bottom: 18px; }
+  #realFlows .rf-empty { border: 1px dashed var(--line-2); border-radius: 12px; padding: 14px; color: var(--muted);
+    font-size: 12.5px; line-height: 1.5; background: var(--card); }
+  #realFlows .rf-flow { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px 14px; margin-bottom: 10px; }
+  #realFlows .rf-flow .r1 { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+  #realFlows .rf-flow .rk { font-family: var(--mono); font-size: 12px; color: var(--accent); background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 7px; padding: 3px 7px; }
+  #realFlows .rf-flow .nm { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+  #realFlows .rf-flow .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
+  #realFlows .rf-chain { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 8px; overflow-wrap: anywhere; }
   .edge-hit { stroke: transparent; fill: none; cursor: pointer; }
   .edge-vis { fill: none; stroke-linecap: round; transition: stroke-opacity .16s, stroke-width .16s; pointer-events: none; }
   .node-g { cursor: pointer; }
@@ -292,12 +305,14 @@
   </header>
 
   <section class="graph">
+    <div class="samplebadge" id="sampleBadge">SAMPLE — illustrative data</div>
     <svg class="stage" id="svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="App relationship graph"></svg>
     <div class="hint">drag tiles · edges = cross-app hand-offs · loops = repeated in-app work · click to inspect</div>
   </section>
 
   <aside class="flows">
     <div id="liveReal" style="display:none"></div>
+    <div id="realFlows"></div>
     <div id="focus"></div>
     <div class="feed-head"><h3>Task streams</h3><span class="c" id="feedCount"></span><span style="flex:1"></span><span class="eyebrow">by total time</span></div>
     <div id="feed"></div>
@@ -753,13 +768,41 @@
     try { applyStatus(await api(running ? "/api/stop" : "/api/start", "POST")); } catch(e){}
   });
 
+  function renderFlows(data){
+    const box = document.getElementById("realFlows");
+    const flows = (data && data.flows) || [];
+    if(!flows.length){
+      box.innerHTML = `<div class="eyebrow" style="margin:2px 0 8px">Your detected flows</div>
+        <div class="rf-empty">Nothing detected yet. With capture <b>on</b>, use your apps normally — repeated flows appear here as a history builds.
+        <br><span style="font-family:var(--mono);font-size:11px;color:var(--faint)">${data?data.event_count:0} events · ${data?data.segment_count:0} sessions so far</span></div>`;
+      return;
+    }
+    const badge = document.getElementById("sampleBadge"); if(badge) badge.style.display = "none";
+    box.innerHTML = `<div class="eyebrow" style="margin:2px 0 8px">Your detected flows · live</div>` +
+      flows.map(f => {
+        const apps = [...new Set(f.steps.map(s => s.app))];
+        const label = (f.review && f.review.name) ? f.review.name : f.name;
+        return `<div class="rf-flow"><div class="r1">
+            <span class="rk">${f.count >= 2 ? ("×" + f.count) : "×1"}</span>
+            <div><div class="nm">${esc(label)}</div><div class="sub">${f.steps.length} steps · ${Math.round(f.total_seconds)}s total</div></div>
+            ${f.review && f.review.automatability ? pill(f.review.automatability) : ""}
+          </div><div class="rf-chain">${apps.map(a => esc(a)).join(" → ")}</div></div>`;
+      }).join("");
+  }
+  async function refreshFlows(){ if(!LIVE) return; try { renderFlows(await api("/api/flows")); } catch(e){} }
+
   async function connect(){
     try {
       const s = await api("/api/status");
       LIVE = true;
       applyStatus(s);
+      refreshFlows();
       if(pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(async () => { try { applyStatus(await api("/api/status")); } catch(e){} }, 2000);
+      let tick = 0;
+      pollTimer = setInterval(async () => {
+        try { applyStatus(await api("/api/status")); } catch(e){}
+        if(++tick % 3 === 0) refreshFlows();   // detected flows every ~6s
+      }, 2000);
     } catch(e) {
       LIVE = false; liveText.textContent = "demo data";
     }

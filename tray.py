@@ -35,6 +35,7 @@ def _make_image():
 def run():
     server = appmod.build_server(PORT)
     threading.Thread(target=server.serve_forever, name="server", daemon=True).start()
+    appmod.capture.start()   # auto-start capturing on launch (Stop from the tray/dashboard)
     webbrowser.open(URL)
 
     if not HAVE_TRAY:

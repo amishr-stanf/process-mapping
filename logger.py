@@ -117,28 +117,35 @@ class Capture:
         # SQLite connections are thread-affine: open ours inside the thread.
         conn = open_db(self.db_path)
         last_focus = (None, None)
-        last_clip_seq = sensors.clipboard_sequence()
+        try:
+            last_clip_seq = sensors.clipboard_sequence()
+        except Exception:
+            last_clip_seq = 0
         is_idle = False
         try:
             while not self._stop.is_set():
-                idle = sensors.idle_seconds()
-                app, title = sensors.get_foreground()
-                if idle >= IDLE_THRESHOLD and not is_idle:
-                    is_idle = True
-                    log_event(conn, "idle_start", app=app, title=title)
-                elif idle < IDLE_THRESHOLD and is_idle:
-                    is_idle = False
-                    log_event(conn, "idle_end", app=app, title=title)
-                if not is_idle and (app, title) != last_focus and (app or title):
-                    last_focus = (app, title)
-                    log_event(conn, "focus", app=app, title=title)
-                seq = sensors.clipboard_sequence()
-                if seq != last_clip_seq:
-                    last_clip_seq = seq
-                    ctype, clen, chash, cprev = sensors.read_clipboard(self.preview_chars)
-                    if ctype is not None:
-                        log_event(conn, "clipboard", app=app, title=title,
-                                  clip_type=ctype, clip_len=clen, clip_hash=chash, clip_preview=cprev)
+                # A transient sensor error must skip one poll, never kill capture.
+                try:
+                    idle = sensors.idle_seconds()
+                    app, title = sensors.get_foreground()
+                    if idle >= IDLE_THRESHOLD and not is_idle:
+                        is_idle = True
+                        log_event(conn, "idle_start", app=app, title=title)
+                    elif idle < IDLE_THRESHOLD and is_idle:
+                        is_idle = False
+                        log_event(conn, "idle_end", app=app, title=title)
+                    if not is_idle and (app, title) != last_focus and (app or title):
+                        last_focus = (app, title)
+                        log_event(conn, "focus", app=app, title=title)
+                    seq = sensors.clipboard_sequence()
+                    if seq != last_clip_seq:
+                        last_clip_seq = seq
+                        ctype, clen, chash, cprev = sensors.read_clipboard(self.preview_chars)
+                        if ctype is not None:
+                            log_event(conn, "clipboard", app=app, title=title,
+                                      clip_type=ctype, clip_len=clen, clip_hash=chash, clip_preview=cprev)
+                except Exception:
+                    pass
                 self._stop.wait(POLL_INTERVAL)
         finally:
             conn.close()
