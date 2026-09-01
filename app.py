@@ -19,6 +19,7 @@ import json
 import os
 import sqlite3
 import sys
+import threading
 import time
 import webbrowser
 from datetime import date, datetime
@@ -187,6 +188,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/stop":
             capture.stop()
             return self._json(status_payload())
+        if self.path == "/api/quit":
+            # Fully end the app: stop capture, reply, then exit the whole process
+            # (the tray keeps it alive otherwise, so a hard exit is the reliable way).
+            capture.stop()
+            self._json({"ok": True})
+            threading.Thread(target=lambda: (time.sleep(0.3), os._exit(0)), daemon=True).start()
+            return
         if self.path == "/api/ingest":
             body = self._read_json() or {}
             events = body.get("events") if isinstance(body, dict) else None

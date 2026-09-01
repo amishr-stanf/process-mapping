@@ -208,6 +208,7 @@
     border-radius: 10px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
     cursor: pointer; font-size: 15px; line-height: 1; }
   .iconbtn:hover { color: var(--text); border-color: var(--line-2); }
+  .iconbtn.quit:hover { color: #ff6b6b; border-color: #ff6b6b; }
   .modal { position: fixed; inset: 0; background: rgba(4,6,12,0.66); display: none; align-items: center;
     justify-content: center; z-index: 50; padding: 20px; }
   .modal.open { display: flex; }
@@ -302,6 +303,7 @@
     <button class="iconbtn" id="settingsBtn" type="button" title="Settings — your API key">⚙</button>
     <button class="capbtn" id="capBtn" type="button"><span class="ic">▶</span><span id="capLabel">Start mapping</span></button>
     <div class="live" id="livePill"><span class="dot"></span><span id="liveText">demo data</span></div>
+    <button class="iconbtn quit" id="quitBtn" type="button" title="Quit the app — stops capture and closes it completely">⏻</button>
   </header>
 
   <section class="graph">
@@ -932,6 +934,16 @@
       const r = await apiPost("/api/ai/test", {});
       statusEl.textContent = r.ok ? `✓ works — replied “${r.reply}”` : `✗ ${r.error}`;
     } catch (e) { statusEl.textContent = "Test failed — is the app running?"; }
+  });
+
+  document.getElementById("quitBtn").addEventListener("click", async () => {
+    if (!LIVE) { alert("This is the demo. Run the app locally to control it."); return; }
+    if (!confirm("Quit workflow-mapper?\n\nThis stops capture and closes the app completely. Reopen it any time from workflow-mapper.exe.")) return;
+    try { await apiPost("/api/quit", {}); } catch (e) {}
+    if (pollTimer) clearInterval(pollTimer);
+    document.body.innerHTML = "<div style='display:grid;place-items:center;height:100vh;font-family:system-ui;color:#98A1B4;background:#0B0C10'>" +
+      "<div style='text-align:center'><div style='font-size:34px;margin-bottom:10px'>⏻</div>" +
+      "workflow-mapper has stopped. You can close this tab.</div></div>";
   });
 
   // ---- Go ---------------------------------------------------------------
