@@ -478,17 +478,29 @@
         { app:"excel", action:"Recompute variance, fix formatting", via:"typed", file:"master_ledger.xlsx" } ] },
   ];
 
+  // Human duration from minutes (avoids 0.5383333333333333m in the UI).
+  const dur = (min) => {
+    const m = Number(min) || 0;
+    if (m < 1) return Math.max(1, Math.round(m * 60)) + "s";
+    if (m < 60) return (m < 10 ? m.toFixed(1).replace(/\.0$/, "") : Math.round(m)) + "m";
+    return (m / 60).toFixed(1).replace(/\.0$/, "") + "h";
+  };
+
   const AUTO_LABEL = { auto:"Automatable", assist:"Assist / draft", skip:"Manual" };
   const AUTO_VAR   = { auto:"var(--auto)", assist:"var(--assist)", skip:"var(--skip)" };
   const VIA_LABEL  = { clipboard:"clipboard", typed:"typed", open:"opened" };
 
   // Choose the data source ONCE at load: real flows from the local app if any,
   // otherwise the demo. (Reload to rebuild the map from the latest capture.)
+  // Only switch the map to real data once something has actually REPEATED —
+  // a single one-off session is noise, and showing it would replace the
+  // illustrative sample with a meaningless 3-node graph on day one.
   let APPS = DEMO_APPS, WORKFLOWS = DEMO_WORKFLOWS, DATA_MODE = "demo";
   try {
     const fd = await fetch("/api/flows").then(r => r.ok ? r.json() : null);
-    if (fd && fd.flows && fd.flows.length) {
-      const t = transformFlows(fd);
+    const repeated = (fd && fd.flows || []).filter(f => f.count >= 2);
+    if (repeated.length) {
+      const t = transformFlows({ flows: repeated });
       APPS = t.APPS; WORKFLOWS = t.WORKFLOWS; DATA_MODE = "live";
       const b = document.getElementById("sampleBadge"); if (b) b.style.display = "none";
     }
@@ -706,12 +718,13 @@
   function focusOverview(){
     const tot=WORKFLOWS.reduce((s,w)=>s+w.perWeek*w.minEach,0);
     const auto=WORKFLOWS.filter(w=>w.auto==="auto").reduce((s,w)=>s+w.perWeek*w.minEach,0);
-    focus.innerHTML=`<div class="flabel"><span class="eyebrow">Overview · last 7 days</span></div>
+    const n = WORKFLOWS.length;
+    focus.innerHTML=`<div class="flabel"><span class="eyebrow">Overview · ${DATA_MODE === "live" ? "your activity" : "sample data"}</span></div>
       <h2>What you repeat</h2>
-      <div class="fsub">${WORKFLOWS.length} recurring tasks · ${Object.keys(APPS).length} apps · 96 hand-offs</div>
+      <div class="fsub">${n} repeated task${n===1?"":"s"} · ${Object.keys(APPS).length} app${Object.keys(APPS).length===1?"":"s"}</div>
       <div class="statrow">
-        <div class="stat"><div class="k">In tracked tasks</div><div class="v">${(tot/60).toFixed(1)}<small> h/wk</small></div></div>
-        <div class="stat"><div class="k">Automatable</div><div class="v" style="color:var(--auto)">${(auto/60).toFixed(1)}<small> h/wk</small></div></div>
+        <div class="stat"><div class="k">Time in these tasks</div><div class="v">${dur(tot)}</div></div>
+        <div class="stat"><div class="k">Automatable</div><div class="v" style="color:var(--auto)">${dur(auto)}</div></div>
       </div>
       <div class="note">Select an edge to inspect a hand-off, or a flow below to trace it across the map.</div>`;
   }
@@ -771,7 +784,7 @@
       ? `${logo(w.app0,22)}<span class="sep" title="repeats inside the app">↻</span>`
       : w.steps.map((s,j)=>`${logo(s.app,22)}${j<w.steps.length-1?'<span class="sep">→</span>':""}`).join("");
     card.innerHTML=`<div class="r1"><div class="rk">${String(i+1).padStart(2,"0")}</div>
-        <div><div class="nm">${esc(w.name)}</div><div class="sub">${esc(w.freq)} · ${w.minEach}m each</div></div>${pill(w.auto)}</div>
+        <div><div class="nm">${esc(w.name)}</div><div class="sub">${esc(w.freq)} · ${dur(w.minEach)} each</div></div>${pill(w.auto)}</div>
       <div class="meter"><div class="track2"><i style="width:${Math.round(tot/maxTot*100)}%;background:${AUTO_VAR[w.auto]}"></i></div>
         <span class="mv">${tot}<small> m/wk</small></span></div>
       <div class="fchain">${chain}</div>`;
@@ -791,8 +804,8 @@
       : w.steps.map((s,j)=>`${logo(s.app,26)}${j<w.steps.length-1?'<span class="sep" style="color:var(--faint);font-family:var(--mono)">→</span>':""}`).join("");
     card.innerHTML=`<div class="r1"><div class="nm">${esc(w.name)}</div>${pill(w.auto)}</div>
       <div class="metrics"><div><div class="k">Freq</div><div class="v">${esc(w.freq)}</div></div>
-        <div><div class="k">Each</div><div class="v">${w.minEach}m</div></div>
-        <div><div class="k">Total</div><div class="v">${w.perWeek*w.minEach}m</div></div></div>
+        <div><div class="k">Each</div><div class="v">${dur(w.minEach)}</div></div>
+        <div><div class="k">Total</div><div class="v">${dur(w.perWeek*w.minEach)}</div></div></div>
       <div class="fchain">${chain}</div>`;
     card.addEventListener("click",()=>{ selectWorkflow(w); scrollFeed(w.id); });
     track.appendChild(card); wfCards[w.id]=card;
@@ -849,11 +862,12 @@
 
   function renderFlows(data){
     const box = document.getElementById("realFlows");
-    const flows = (data && data.flows) || [];
+    const all = (data && data.flows) || [];
+    const flows = all.filter(f => f.count >= 2);   // only genuine repeats are findings
     if(!flows.length){
       box.innerHTML = `<div class="eyebrow" style="margin:2px 0 8px">Your detected flows</div>
-        <div class="rf-empty">Nothing detected yet. With capture <b>on</b>, use your apps normally — repeated flows appear here as a history builds.
-        <br><span style="font-family:var(--mono);font-size:11px;color:var(--faint)">${data?data.event_count:0} events · ${data?data.segment_count:0} sessions so far</span></div>`;
+        <div class="rf-empty">Still learning. Keep working normally — a task has to repeat before it shows up here.
+        <br><span style="font-family:var(--mono);font-size:11px;color:var(--faint)">${data?data.event_count:0} events · ${data?data.segment_count:0} sessions · ${all.length} candidate${all.length===1?"":"s"} seen once</span></div>`;
       return;
     }
     const badge = document.getElementById("sampleBadge"); if(badge) badge.style.display = "none";
