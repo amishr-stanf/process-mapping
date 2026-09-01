@@ -116,8 +116,17 @@ def set_rule(db, sig, action, label=None):
     finally:
         conn.close()
 
-GAP_SECONDS = 45.0   # gap between actions that starts a new candidate flow
-MIN_STEPS = 2        # ignore trivial 1-action segments
+# Where a flow ENDS.
+#
+# The primary boundary is real user absence: the logger emits idle_start after
+# 60s with no keyboard/mouse input. A gap between *events* is NOT the same
+# thing — reading a PDF for five minutes produces one focus event and then
+# silence, while the person is working the whole time. Splitting on a short
+# event gap shatters long multi-app tasks, so the gap is only a safety net for
+# cases where idle detection missed (e.g. the app was closed).
+GAP_SECONDS = 900.0      # 15 min event gap = safety-net boundary
+MAX_FLOW_SECONDS = 3600  # a single flow never spans more than an hour
+MIN_STEPS = 2            # ignore trivial 1-action segments
 
 # --- normalization: strip volatile detail so repeats collapse ---------------
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
@@ -260,6 +269,13 @@ def link_transfers(actions):
 
 # --- stage 1: deterministic segmentation + clustering -----------------------
 def segment(actions):
+    """Cut the action stream into end-to-end sequences.
+
+    Boundaries, in order of authority:
+      1. idle_start  — the person actually stopped working (primary)
+      2. a > GAP_SECONDS event gap — safety net when idle wasn't recorded
+      3. MAX_FLOW_SECONDS — a runaway guard so one flow can't swallow a day
+    """
     segments, cur, prev_ts = [], [], None
     for a in actions:
         if a["verb"] == "_idle":
@@ -267,9 +283,10 @@ def segment(actions):
                 segments.append(cur); cur = []
             prev_ts = None
             continue
-        if prev_ts is not None and a["ts"] - prev_ts > GAP_SECONDS:
-            if cur:
-                segments.append(cur); cur = []
+        too_long = cur and (a["ts"] - cur[0]["ts"]) > MAX_FLOW_SECONDS
+        big_gap = prev_ts is not None and (a["ts"] - prev_ts) > GAP_SECONDS
+        if (big_gap or too_long) and cur:
+            segments.append(cur); cur = []
         cur.append(a)
         prev_ts = a["ts"]
     if cur:
