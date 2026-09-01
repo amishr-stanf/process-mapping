@@ -194,13 +194,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"stored": n})
         if self.path == "/api/config":
             body = self._read_json() or {}
-            status = config.update_ai(
+            config.update_ai(
                 provider=body.get("provider"),
                 api_key=body.get("api_key"),
                 model=body.get("model"),
                 clear_key=bool(body.get("clear_key")),
             )
-            return self._json(status)
+            if "screenshots" in body:
+                config.set_screenshots(body.get("screenshots"))
+            return self._json(config.public_status())
         if self.path == "/api/ai/test":
             # Uses the local user's OWN key — billed to them, never the author.
             try:

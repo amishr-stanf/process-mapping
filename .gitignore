@@ -8,6 +8,9 @@ activity.db
 # Local config — may contain the user's own API key
 config.json
 
+# Captured screenshots (personal) — never commit
+shots/
+
 # Python
 __pycache__/
 *.py[cod]

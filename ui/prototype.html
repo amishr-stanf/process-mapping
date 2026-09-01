@@ -348,6 +348,14 @@
       <label>Model</label>
       <input id="setModel" type="text" placeholder="e.g. claude-sonnet-5" spellcheck="false" />
     </div>
+    <div class="field">
+      <label>Native-app capture (advanced)</label>
+      <label style="display:flex;align-items:center;gap:9px;font-family:var(--sans);text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);cursor:pointer">
+        <input id="setShots" type="checkbox" style="width:auto" />
+        Capture screenshots of the focused window
+      </label>
+      <div class="hint">Off by default. Helps detect repeated steps inside one desktop app. Pixels stay on this machine (saved next to your data). Leave off unless you need in-app task detection.</div>
+    </div>
     <div class="actions">
       <button class="btn primary" id="setSave" type="button">Save</button>
       <button class="btn ghost" id="setTest" type="button">Test key</button>
@@ -358,12 +366,12 @@
 </div>
 
 <script>
-(function () {
+(async function () {
   "use strict";
   const NS = "http://www.w3.org/2000/svg";
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const APPS = {
+  const DEMO_APPS = {
     gmail:  { name: "Gmail",    kind: "Mail" },
     excel:  { name: "Excel",    kind: "Spreadsheet" },
     slack:  { name: "Slack",    kind: "Chat" },
@@ -373,9 +381,61 @@
     outlook:{ name: "Outlook",  kind: "Calendar" },
     files:  { name: "Explorer", kind: "Files" },
   };
-  const logo = (id, s) => `<svg class="logo" width="${s}" height="${s}" viewBox="0 0 48 48"><use href="#lg-${id}"></use></svg>`;
 
-  const WORKFLOWS = [
+  // Logo resolution: known apps get a built-in logo, anything else a monogram.
+  const KNOWN_LOGOS = new Set(["gmail","excel","slack","orders","chrome","word","outlook","files"]);
+  function knownLogo(id){
+    if (KNOWN_LOGOS.has(id)) return id;
+    const a = (id || "").toLowerCase();
+    if (a.includes("excel")) return "excel";
+    if (a.includes("winword") || a.includes("word")) return "word";
+    if (a.includes("outlook")) return "outlook";
+    if (a.includes("slack")) return "slack";
+    if (a.includes("chrome")) return "chrome";
+    if (a.includes("explorer")) return "files";
+    if (a.includes("google") || a.includes("gmail")) return "gmail";
+    return null;
+  }
+  function initials(id){
+    const c = (id || "").replace(/\.exe$/i, "").replace(/^https?:\/\//, "");
+    const p = c.split(/[.\s\-_/]+/).filter(Boolean);
+    return (((p[0] && p[0][0]) || "") + ((p[1] && p[1][0]) || (p[0] && p[0][1]) || "")).toUpperCase() || "?";
+  }
+  const logo = (id, s) => {
+    const k = knownLogo(id);
+    if (k) return `<svg class="logo" width="${s}" height="${s}" viewBox="0 0 48 48"><use href="#lg-${k}"></use></svg>`;
+    return `<svg class="logo" width="${s}" height="${s}" viewBox="0 0 48 48"><rect x="4" y="4" width="40" height="40" rx="10" fill="#2A2F3D"/><text x="24" y="27" text-anchor="middle" font-family="ui-monospace,monospace" font-size="15" fill="#98A1B4">${initials(id)}</text></svg>`;
+  };
+
+  // Transform real /api/flows output into the {APPS, WORKFLOWS} the UI renders.
+  const VERB_LABEL = { focus:"in", copy:"copied in", visit:"visited", click:"clicked", input:"entered", read:"read in" };
+  const VERB_VIA = { copy:"clipboard", click:"typed", input:"typed", visit:"open", focus:"open", read:"open" };
+  function prettyApp(a){ return (a || "?").replace(/\.exe$/i, "").replace(/^https?:\/\//, "").replace(/^www\./, ""); }
+  function appKind(a){ return (a.includes(".") && !/\.exe$/i.test(a)) ? "Web app" : "App"; }
+  function transformFlows(fd){
+    const APPS = {}, WF = [];
+    (fd.flows || []).forEach(f => {
+      const apps = [...new Set(f.steps.map(s => s.app))];
+      apps.forEach(a => { if (!APPS[a]) APPS[a] = { name: prettyApp(a), kind: appKind(a) }; });
+      let auto = (f.review && f.review.automatability) || (f.count >= 3 ? "auto" : "assist");
+      if (!["auto","assist","skip"].includes(auto)) auto = "assist";
+      WF.push({
+        id: "f" + f.id,
+        name: (f.review && f.review.name) ? f.review.name : f.name,
+        auto,
+        perWeek: f.count,
+        minEach: Math.max(0.1, (f.avg_seconds || 0) / 60),
+        freq: "×" + f.count + " seen",
+        trigger: (f.review && f.review.reason) ? f.review.reason : ("observed " + f.count + "×"),
+        intra: apps.length === 1,
+        app0: f.steps[0].app,
+        steps: f.steps.map(s => ({ app: s.app, action: (VERB_LABEL[s.verb] || s.verb) + " " + s.obj, via: VERB_VIA[s.verb] || "open" })),
+      });
+    });
+    return { APPS, WORKFLOWS: WF };
+  }
+
+  const DEMO_WORKFLOWS = [
     { id:"invoice", name:"Log invoice", auto:"auto", perWeek:30, minEach:4, freq:"6×/day",
       trigger:"An invoice email arrives", steps:[
         { app:"gmail",  action:"Open invoice email, copy the amount", via:"clipboard", sample:"$4,821.00" },
@@ -419,6 +479,19 @@
   const AUTO_LABEL = { auto:"Automatable", assist:"Assist / draft", skip:"Manual" };
   const AUTO_VAR   = { auto:"var(--auto)", assist:"var(--assist)", skip:"var(--skip)" };
   const VIA_LABEL  = { clipboard:"clipboard", typed:"typed", open:"opened" };
+
+  // Choose the data source ONCE at load: real flows from the local app if any,
+  // otherwise the demo. (Reload to rebuild the map from the latest capture.)
+  let APPS = DEMO_APPS, WORKFLOWS = DEMO_WORKFLOWS, DATA_MODE = "demo";
+  try {
+    const fd = await fetch("/api/flows").then(r => r.ok ? r.json() : null);
+    if (fd && fd.flows && fd.flows.length) {
+      const t = transformFlows(fd);
+      APPS = t.APPS; WORKFLOWS = t.WORKFLOWS; DATA_MODE = "live";
+      const b = document.getElementById("sampleBadge"); if (b) b.style.display = "none";
+    }
+  } catch (e) {}
+  window.__mode = DATA_MODE;
 
   // Flag intra-app workflows (all steps in one app) — these become self-loops.
   WORKFLOWS.forEach(w => { w.intra = w.steps.every(s => s.app === w.steps[0].app); w.app0 = w.steps[0].app; });
@@ -534,13 +607,16 @@
     const g=el("g",{class:"node-g"});
     const ring=el("rect",{class:"node-ring", x:n.x-TILE/2-4, y:n.y-TILE/2-4, width:TILE+8, height:TILE+8, rx:15});
     const tile=el("rect",{x:n.x-TILE/2, y:n.y-TILE/2, width:TILE, height:TILE, rx:12, fill:"var(--card)", stroke:"var(--line-2)", "stroke-width":1, filter:"url(#ndrop)"});
-    const use=el("use",{href:"#lg-"+n.id, x:n.x-18, y:n.y-18, width:36, height:36});
+    const k=knownLogo(n.id);
+    let glyph;
+    if (k) { glyph=el("use",{href:"#lg-"+k, x:n.x-18, y:n.y-18, width:36, height:36}); }
+    else { glyph=el("text",{x:n.x, y:n.y+1, "text-anchor":"middle", "dominant-baseline":"central", "font-family":"var(--mono)", "font-size":15, fill:"var(--text)"}); glyph.textContent=initials(n.id); }
     const label=el("text",{class:"node-label", x:n.x, y:n.y+TILE/2+16}); label.textContent=APPS[n.id].name;
-    g.appendChild(ring); g.appendChild(tile); g.appendChild(use); g.appendChild(label);
+    g.appendChild(ring); g.appendChild(tile); g.appendChild(glyph); g.appendChild(label);
     g.addEventListener("click",()=>{ if(!dragged) selectNode(n.id); });
     enableDrag(g,n);
     gNodes.appendChild(g);
-    return { n, g, ring, tile, use, label };
+    return { n, g, ring, tile, glyph, glyphKind: k?"use":"text", label };
   });
 
   function redraw() {
@@ -549,7 +625,8 @@
     nodeEls.forEach(o=>{ const n=o.n;
       o.ring.setAttribute("x",n.x-TILE/2-4); o.ring.setAttribute("y",n.y-TILE/2-4);
       o.tile.setAttribute("x",n.x-TILE/2); o.tile.setAttribute("y",n.y-TILE/2);
-      o.use.setAttribute("x",n.x-18); o.use.setAttribute("y",n.y-18);
+      if(o.glyphKind==="use"){ o.glyph.setAttribute("x",n.x-18); o.glyph.setAttribute("y",n.y-18); }
+      else { o.glyph.setAttribute("x",n.x); o.glyph.setAttribute("y",n.y+1); }
       o.label.setAttribute("x",n.x); o.label.setAttribute("y",n.y+TILE/2+16); });
   }
 
@@ -830,6 +907,7 @@
     try {
       const c = await api("/api/config");
       provEl.value = c.provider || ""; modelEl.value = c.model || ""; keyEl.value = ""; showKeyState(c);
+      const shots = document.getElementById("setShots"); if (shots) shots.checked = !!c.screenshots;
     } catch (e) { hintEl.textContent = "start the app (python app.py) to save settings"; }
   }
   function closeSettings() { modal.classList.remove("open"); }
@@ -843,6 +921,7 @@
     try {
       const body = { provider: provEl.value || null, model: modelEl.value };
       if (keyEl.value) body.api_key = keyEl.value;
+      const shots = document.getElementById("setShots"); if (shots) body.screenshots = shots.checked;
       const c = await apiPost("/api/config", body);
       keyEl.value = ""; showKeyState(c); statusEl.textContent = "Saved.";
     } catch (e) { statusEl.textContent = "Save failed — is the app running?"; }

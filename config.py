@@ -44,7 +44,10 @@ def config_path():
 
 
 def _defaults():
-    return {"ai": {"provider": None, "api_key": "", "model": ""}}
+    return {
+        "ai": {"provider": None, "api_key": "", "model": ""},
+        "capture": {"screenshots": False, "interval": 30, "mode": "focused"},
+    }
 
 
 def load():
@@ -55,7 +58,15 @@ def load():
         cfg = {}
     base = _defaults()
     base["ai"].update((cfg.get("ai") or {}))
+    base["capture"].update((cfg.get("capture") or {}))
     return base
+
+
+def set_screenshots(enabled):
+    cfg = load()
+    cfg["capture"]["screenshots"] = bool(enabled)
+    save(cfg)
+    return public_status()
 
 
 def save(cfg):
@@ -87,12 +98,14 @@ def public_status():
     ai = load()["ai"]
     provider = ai.get("provider")
     key = resolve_key(provider)
+    cap = load()["capture"]
     return {
         "provider": provider,
         "model": ai.get("model") or default_model(provider),
         "key_set": bool(key),
         "key_hint": ("…" + key[-4:]) if key else "",
         "source": "config" if ai.get("api_key") else ("env" if key else "none"),
+        "screenshots": bool(cap.get("screenshots")),
     }
 
 

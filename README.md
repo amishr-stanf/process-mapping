@@ -91,6 +91,24 @@ The optional AI layer (flow suggestions and automation synthesis) runs on
   your data and never pays for your usage — every AI call is billed to the key
   on your machine.
 
+## Understanding tasks inside a single native app
+
+Window title + clipboard don't reveal what happens *inside* a desktop app
+(Excel edits, Word formatting, a proprietary tool). Two ways to go deeper:
+
+- **UI Automation (recommended, not yet built):** subscribe to the OS
+  accessibility layer (Windows UIA / macOS AX) to capture *semantic* actions —
+  which control was invoked, which field changed, which menu item was picked —
+  with no pixels. It's lighter, more precise, privacy-preserving, and plugs
+  straight into the mining pipeline like web events do. This is the intended
+  primary method for native-app depth.
+- **Screenshots (built, off by default):** enable "Capture screenshots of the
+  focused window" in ⚙ Settings. Each shot is reduced to an 8×8 perceptual hash
+  so repeated *screens/steps* can be detected deterministically (same task →
+  near-identical hash), with a local thumbnail a BYOK vision model can later
+  label. Pixels never leave your machine (saved next to the database). Use only
+  when you need in-app task detection — it's the heaviest, most sensitive sensor.
+
 ## Capture web actions (Chrome extension)
 
 The OS logger can't see inside web apps (Salesforce, web Gmail, internal

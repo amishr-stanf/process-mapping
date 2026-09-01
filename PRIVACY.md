@@ -15,6 +15,15 @@ data never leaves your computer.
 - Navigation, clicks on links/buttons, form-field entries, and text selections
 - For each, a short (≤80 char) truncated + hashed preview of text
 
+## Screenshots (optional, off by default)
+
+If you turn on "Capture screenshots of the focused window" in Settings, the app
+periodically saves a thumbnail of the focused window plus a perceptual hash,
+stored locally next to the database (`shots/`). This is the most sensitive
+option — it captures whatever is on that window. It is off unless you enable it,
+the images never leave your machine, and you can delete them anytime by removing
+the `shots/` folder.
+
 ## What it never captures
 
 - **Passwords and sensitive fields** — inputs of type password/hidden, and

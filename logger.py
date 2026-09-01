@@ -122,6 +122,18 @@ class Capture:
         except Exception:
             last_clip_seq = 0
         is_idle = False
+
+        # Optional screenshot capture (off unless enabled in Settings).
+        try:
+            import config as _cfg
+            _cap = _cfg.load().get("capture", {})
+        except Exception:
+            _cap = {}
+        shots_on = bool(_cap.get("screenshots"))
+        shot_interval = float(_cap.get("interval", 30) or 30)
+        shot_mode = _cap.get("mode", "focused")
+        shots_dir = os.path.join(os.path.dirname(os.path.abspath(self.db_path)), "shots")
+        last_shot = 0.0
         try:
             while not self._stop.is_set():
                 # A transient sensor error must skip one poll, never kill capture.
@@ -144,6 +156,10 @@ class Capture:
                         if ctype is not None:
                             log_event(conn, "clipboard", app=app, title=title,
                                       clip_type=ctype, clip_len=clen, clip_hash=chash, clip_preview=cprev)
+                    if shots_on and not is_idle and (time.time() - last_shot) >= shot_interval:
+                        import screen
+                        screen.capture(conn, app, title, shots_dir, mode=shot_mode)
+                        last_shot = time.time()
                 except Exception:
                     pass
                 self._stop.wait(POLL_INTERVAL)
