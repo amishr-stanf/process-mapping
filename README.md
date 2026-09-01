@@ -3,8 +3,18 @@
 A local-first system that maps your cross-app workflows, ranks the tasks you
 repeat, and (later) proposes automations for the most repeatable ones.
 
-Everything runs on your laptop. Captured data stays in a local SQLite file
-(`activity.db`). No keystrokes, no screenshots, no network.
+Everything runs on your laptop. Captured data stays in a local SQLite file.
+Your activity never leaves your machine.
+
+## ⬇️ Download (Windows)
+
+**Get the app from the [latest release](https://github.com/amishr-stanf/process-mapping/releases/latest)** →
+download `workflow-mapper-windows.zip`, unzip, run `workflow-mapper.exe`
+(on the SmartScreen warning: **More info → Run anyway**).
+
+> The `.exe` is **not** in the source tree — it's a build artifact published on
+> the Releases page. Cloning this repo gives you the source, not the app. To
+> build it yourself see *Build the app* below.
 
 ## Status: Phase 0 — activity capture
 
