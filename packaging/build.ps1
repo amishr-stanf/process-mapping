@@ -13,7 +13,8 @@ python -m PyInstaller --noconfirm --clean --onefile --noconsole `
   --name workflow-mapper `
   --icon packaging\icon.ico `
   --add-data "ui/prototype.html;ui" `
-  --hidden-import sensors_win --hidden-import sensors_null --hidden-import screen `
+  --add-data "ui/admin.html;ui" `
+  --hidden-import sensors_win --hidden-import sensors_null --hidden-import screen --hidden-import auth `
   tray.py
 
 Write-Host ""

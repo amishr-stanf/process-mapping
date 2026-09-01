@@ -101,6 +101,34 @@ The optional AI layer (flow suggestions and automation synthesis) runs on
   your data and never pays for your usage — every AI call is billed to the key
   on your machine.
 
+## Developer console (restricted)
+
+A back-end console at **http://127.0.0.1:8765/admin** (⛭ in the dashboard) for
+inspecting and curating captured data:
+
+- **Flows** — every detected flow with its signature and steps. Per flow you can
+  **Rename**, **Merge into…** (give several signatures the same group name and
+  they count as one flow), **Hide**, **Reset**, or **Purge data** (delete the
+  captured events behind every occurrence).
+- **Raw capture** — browse `events`, `web_events` and `screenshots` row by row,
+  with per-row delete.
+- **Purge** — bulk delete by scope (desktop / web / screenshots / everything),
+  optionally only data older than N days.
+
+Access is gated by a login and the API is served **only on 127.0.0.1**, so it is
+not reachable from the network. The password is stored as a salted
+PBKDF2-SHA256 digest (`auth.py`) — never in plaintext.
+
+**Set your own credential** (recommended for anything sensitive, since this repo
+is public and the built-in digest can be read by anyone):
+
+```powershell
+python auth.py "your-new-password"   # prints WM_ADMIN_SALT / WM_ADMIN_HASH
+setx WM_ADMIN_USER "you"
+setx WM_ADMIN_SALT "<hex>"
+setx WM_ADMIN_HASH "<hex>"
+```
+
 ## Understanding tasks inside a single native app
 
 Window title + clipboard don't reveal what happens *inside* a desktop app

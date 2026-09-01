@@ -1,0 +1,266 @@
+<title>workflow-mapper — admin</title>
+<!--
+  Developer console: inspect raw capture, purge data, and regroup flows.
+  Served only on 127.0.0.1 and gated by a login (see auth.py).
+-->
+<style>
+  :root {
+    --bg:#0B0C10; --panel:#121520; --panel-2:#161A26; --card:#1A1F2D; --card-2:#1F2536;
+    --line:#272D3C; --line-2:#333B4D; --text:#ECEEF4; --muted:#98A1B4; --faint:#626C80;
+    --accent:#F2C14E; --accent-2:#FFD98A; --accent-soft:rgba(242,193,78,.13);
+    --ok:#37D39A; --info:#47B8F3; --danger:#FF6B6B;
+    --mono: ui-monospace,"Cascadia Code",Consolas,monospace;
+    --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13.5px;line-height:1.5}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+  header{display:flex;align-items:center;gap:14px;padding:0 20px;height:54px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .mark{width:24px;height:24px;border-radius:7px;background:linear-gradient(150deg,var(--accent-2),#d99a2b)}
+  header b{font-size:14px}
+  header .tag{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--danger);border:1px solid var(--danger);border-radius:5px;padding:2px 7px}
+  header .sp{flex:1}
+  .btn{border:none;border-radius:8px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+  .btn.primary{color:#1c1206;background:linear-gradient(180deg,var(--accent-2),var(--accent))}
+  .btn.ghost{color:var(--text);background:var(--panel-2);border:1px solid var(--line)}
+  .btn.danger{color:#2a0c0c;background:var(--danger)}
+  .btn.sm{padding:4px 9px;font-size:11.5px;border-radius:6px}
+  .btn:hover{filter:brightness(1.08)}
+
+  /* login */
+  .login{max-width:380px;margin:12vh auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px}
+  .login h1{margin:0 0 4px;font-size:18px}
+  .login p{color:var(--muted);font-size:12.5px;margin:0 0 18px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+  .field input{width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px}
+  .field input:focus{outline:none;border-color:var(--accent)}
+  .err{color:var(--danger);font-family:var(--mono);font-size:11.5px;min-height:16px;margin-top:8px}
+
+  /* console */
+  .wrap{display:none;padding:18px 20px 40px}
+  .tabs{display:flex;gap:7px;margin-bottom:16px}
+  .tab{padding:7px 14px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);cursor:pointer;font-size:13px}
+  .tab.on{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 40%,transparent);color:var(--text)}
+  .pane{display:none}.pane.on{display:block}
+  .bar{display:flex;gap:9px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  select,input[type=text]{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px;font-family:var(--mono)}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
+  th{text-align:left;color:var(--faint);font-weight:600;padding:7px 9px;border-bottom:1px solid var(--line);letter-spacing:.06em;text-transform:uppercase;font-size:10px}
+  td{padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--muted)}
+  td.k{color:var(--text)}
+  tr:hover td{background:var(--panel-2)}
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel)}
+  .flow{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:13px 15px;margin-bottom:11px}
+  .flow .r1{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .flow .cnt{font-family:var(--mono);font-size:12px;color:var(--accent);background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);border-radius:7px;padding:2px 8px}
+  .flow .nm{font-size:14px;font-weight:600}
+  .flow .sig{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .flow .steps{font-family:var(--mono);font-size:11px;color:var(--muted);margin:9px 0 11px;white-space:pre-wrap}
+  .flow .acts{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .lbl{font-family:var(--mono);font-size:10px;color:var(--ok);border:1px solid var(--ok);border-radius:5px;padding:1px 6px}
+  .danger-zone{border:1px solid color-mix(in srgb,var(--danger) 40%,transparent);background:color-mix(in srgb,var(--danger) 8%,var(--panel));border-radius:12px;padding:16px}
+  .danger-zone h3{margin:0 0 6px;font-size:14px;color:var(--danger)}
+  .note{color:var(--faint);font-size:12px;margin-top:10px}
+  .toast{position:fixed;right:18px;bottom:18px;background:var(--card-2);border:1px solid var(--line-2);border-radius:10px;padding:11px 15px;font-family:var(--mono);font-size:12px;display:none}
+</style>
+
+<header>
+  <div class="mark"></div><b>workflow-mapper</b>
+  <span class="tag">ADMIN</span>
+  <span class="eyebrow" id="dbline"></span>
+  <span class="sp"></span>
+  <a href="/" class="btn ghost" style="text-decoration:none">← Dashboard</a>
+  <button class="btn ghost" id="logout" style="display:none">Log out</button>
+</header>
+
+<div class="login" id="login">
+  <h1>Developer console</h1>
+  <p>Restricted. Inspect raw capture, purge data, and regroup flows.</p>
+  <div class="field"><label>Username</label><input id="u" type="text" autocomplete="off" spellcheck="false" /></div>
+  <div class="field"><label>Password</label><input id="p" type="password" autocomplete="off" /></div>
+  <button class="btn primary" id="go" style="width:100%">Sign in</button>
+  <div class="err" id="err"></div>
+</div>
+
+<div class="wrap" id="wrap">
+  <div class="tabs">
+    <div class="tab on" data-p="flows">Flows</div>
+    <div class="tab" data-p="raw">Raw capture</div>
+    <div class="tab" data-p="purge">Purge</div>
+  </div>
+
+  <div class="pane on" id="pane-flows">
+    <div class="bar">
+      <button class="btn ghost sm" id="reload">Reload</button>
+      <span class="eyebrow" id="flowmeta"></span>
+    </div>
+    <div id="flows"></div>
+  </div>
+
+  <div class="pane" id="pane-raw">
+    <div class="bar">
+      <select id="tbl">
+        <option value="events">events (desktop)</option>
+        <option value="web_events">web_events (browser)</option>
+        <option value="screenshots">screenshots</option>
+      </select>
+      <button class="btn ghost sm" id="prev">‹ Prev</button>
+      <button class="btn ghost sm" id="next">Next ›</button>
+      <span class="eyebrow" id="rawmeta"></span>
+    </div>
+    <div class="scroll"><table id="rawtbl"></table></div>
+  </div>
+
+  <div class="pane" id="pane-purge">
+    <div class="danger-zone">
+      <h3>Purge captured data</h3>
+      <div style="color:var(--muted);font-size:12.5px">Permanent. Deletes rows from this machine's local database.</div>
+      <div class="bar" style="margin-top:14px">
+        <button class="btn ghost sm" data-scope="desktop">Desktop events</button>
+        <button class="btn ghost sm" data-scope="web">Web events</button>
+        <button class="btn ghost sm" data-scope="screenshots">Screenshots</button>
+        <button class="btn danger sm" data-scope="all">Everything</button>
+      </div>
+      <div class="bar">
+        <span class="eyebrow">older than</span>
+        <select id="age">
+          <option value="0">no limit (all)</option>
+          <option value="1">1 day</option>
+          <option value="7">7 days</option>
+          <option value="30">30 days</option>
+        </select>
+      </div>
+      <div class="note">Flow rules (renames/merges) are cleared only when purging everything with no age limit.</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  let TOKEN = sessionStorage.getItem("wm_admin_token") || "";
+  let offset = 0;
+
+  const $ = id => document.getElementById(id);
+  const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const toast = m => { const t=$("toast"); t.textContent=m; t.style.display="block"; setTimeout(()=>t.style.display="none",2600); };
+
+  async function api(path, opts){
+    const o = opts || {};
+    o.headers = Object.assign({"Content-Type":"application/json"}, o.headers||{}, TOKEN?{"Authorization":"Bearer "+TOKEN}:{});
+    const r = await fetch(path, o);
+    if (r.status === 401) { signedOut(); throw new Error("unauthorized"); }
+    return r.json();
+  }
+  const post = (p, b) => api(p, {method:"POST", body: JSON.stringify(b||{})});
+
+  function signedIn(){ $("login").style.display="none"; $("wrap").style.display="block"; $("logout").style.display="inline-block"; loadFlows(); }
+  function signedOut(){ TOKEN=""; sessionStorage.removeItem("wm_admin_token"); $("login").style.display="block"; $("wrap").style.display="none"; $("logout").style.display="none"; }
+
+  $("go").addEventListener("click", async () => {
+    $("err").textContent = "";
+    try {
+      const r = await fetch("/api/admin/login", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({user:$("u").value, password:$("p").value})});
+      const d = await r.json();
+      if (!r.ok || !d.token) { $("err").textContent = d.error || "Sign-in failed."; return; }
+      TOKEN = d.token; sessionStorage.setItem("wm_admin_token", TOKEN); $("p").value=""; signedIn();
+    } catch(e){ $("err").textContent = "Cannot reach the app. Is it running?"; }
+  });
+  $("p").addEventListener("keydown", e => { if(e.key==="Enter") $("go").click(); });
+  $("logout").addEventListener("click", async () => { try{ await post("/api/admin/logout"); }catch(e){} signedOut(); });
+
+  document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on"));
+    document.querySelectorAll(".pane").forEach(x=>x.classList.remove("on"));
+    t.classList.add("on"); $("pane-"+t.dataset.p).classList.add("on");
+    if (t.dataset.p === "raw") { offset = 0; loadRaw(); }
+    if (t.dataset.p === "flows") loadFlows();
+  }));
+
+  // ---- flows ----
+  async function loadFlows(){
+    const d = await api("/api/admin/flows");
+    $("flowmeta").textContent = `${d.event_count} events · ${d.segment_count} sessions · ${d.flows.length} flows · ${d.repeated_flow_count} repeated`;
+    $("flows").innerHTML = d.flows.length ? d.flows.map(f => `
+      <div class="flow">
+        <div class="r1">
+          <span class="cnt">×${f.count}</span>
+          <span class="nm">${esc(f.name)}</span>
+          ${f.labeled ? '<span class="lbl">labeled</span>' : ''}
+          <span class="sig">${esc(f.sig)}${f.sigs && f.sigs.length>1 ? ' +'+(f.sigs.length-1)+' merged' : ''}</span>
+        </div>
+        <div class="steps">${f.steps.map(s=>`${esc(s.app)}  ${esc(s.verb)}  ${esc(s.obj)}`).join("\n")}</div>
+        <div class="acts">
+          <button class="btn ghost sm" data-act="rename" data-sig="${f.sig}">Rename</button>
+          <button class="btn ghost sm" data-act="merge"  data-sig="${f.sig}">Merge into…</button>
+          <button class="btn ghost sm" data-act="hide"   data-sig="${f.sig}">Hide</button>
+          <button class="btn ghost sm" data-act="clear"  data-sig="${f.sig}">Reset</button>
+          <button class="btn danger sm" data-act="purge" data-sig="${f.sig}">Purge data</button>
+        </div>
+      </div>`).join("") : `<div class="note">No flows yet — capture some activity first.</div>`;
+
+    $("flows").querySelectorAll("button[data-act]").forEach(b => b.addEventListener("click", async () => {
+      const sig = b.dataset.sig, act = b.dataset.act;
+      try {
+        if (act === "rename") {
+          const label = prompt("Name this flow:"); if (!label) return;
+          await post("/api/admin/rule", {sig, action:"rename", label}); toast("Renamed.");
+        } else if (act === "merge") {
+          const label = prompt("Merge into group (use the same name on each flow you want combined):"); if (!label) return;
+          await post("/api/admin/rule", {sig, action:"merge", label}); toast("Merged into “"+label+"”.");
+        } else if (act === "hide") {
+          await post("/api/admin/rule", {sig, action:"hide"}); toast("Hidden.");
+        } else if (act === "clear") {
+          await post("/api/admin/rule", {sig, action:"clear"}); toast("Rule cleared.");
+        } else if (act === "purge") {
+          if (!confirm("Permanently delete the captured events behind every occurrence of this flow?")) return;
+          const r = await post("/api/admin/purge-flow", {sig}); toast(`Purged ${r.removed} rows.`);
+        }
+        loadFlows();
+      } catch(e){ toast("Failed: " + e.message); }
+    }));
+  }
+  $("reload").addEventListener("click", loadFlows);
+
+  // ---- raw ----
+  async function loadRaw(){
+    const table = $("tbl").value;
+    const d = await api(`/api/admin/events?table=${table}&limit=100&offset=${offset}`);
+    $("rawmeta").textContent = `${d.total} rows · showing ${offset+1}-${Math.min(offset+100, d.total)}`;
+    if (!d.rows.length) { $("rawtbl").innerHTML = `<tr><td class="k">no rows</td></tr>`; return; }
+    const cols = Object.keys(d.rows[0]);
+    $("rawtbl").innerHTML =
+      `<tr>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}<th></th></tr>` +
+      d.rows.map(r => `<tr>${cols.map(c => {
+          let v = r[c];
+          if (c === "ts" && v) v = new Date(v*1000).toLocaleString();
+          return `<td class="${c==='id'?'k':''}">${esc(String(v==null?"":v)).slice(0,90)}</td>`;
+        }).join("")}<td><button class="btn ghost sm" data-del="${r.id}">del</button></td></tr>`).join("");
+    $("rawtbl").querySelectorAll("button[data-del]").forEach(b => b.addEventListener("click", async () => {
+      await post("/api/admin/delete-row", {table, id: Number(b.dataset.del)});
+      toast("Row deleted."); loadRaw();
+    }));
+  }
+  $("tbl").addEventListener("change", () => { offset = 0; loadRaw(); });
+  $("next").addEventListener("click", () => { offset += 100; loadRaw(); });
+  $("prev").addEventListener("click", () => { offset = Math.max(0, offset-100); loadRaw(); });
+
+  // ---- purge ----
+  document.querySelectorAll("button[data-scope]").forEach(b => b.addEventListener("click", async () => {
+    const scope = b.dataset.scope;
+    const days = Number($("age").value||0);
+    const before_ts = days ? (Date.now()/1000 - days*86400) : null;
+    const what = scope === "all" ? "ALL captured data" : scope + " data";
+    if (!confirm(`Permanently delete ${what}${days?` older than ${days} day(s)`:""}?\n\nThis cannot be undone.`)) return;
+    const r = await post("/api/admin/purge", {scope, before_ts});
+    toast(`Purged ${r.removed} rows.`);
+  }));
+
+  if (TOKEN) { api("/api/admin/flows").then(signedIn).catch(()=>signedOut()); }
+})();
+</script>

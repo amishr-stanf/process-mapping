@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 import ai
+import auth
 import config
 import logger
 import mining
@@ -156,6 +157,40 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             return None
 
+    def _admin_ok(self):
+        """Bearer token from the admin console; 401 if missing/expired."""
+        tok = (self.headers.get("Authorization") or "").replace("Bearer ", "").strip()
+        if auth.valid(tok):
+            return True
+        self._json({"error": "unauthorized"}, 401)
+        return False
+
+    def _admin_events(self, qs):
+        from urllib.parse import parse_qs
+        q = parse_qs(qs)
+        limit = min(int((q.get("limit") or [200])[0]), 1000)
+        offset = int((q.get("offset") or [0])[0])
+        table = (q.get("table") or ["events"])[0]
+        conn = sqlite3.connect(DB)
+        conn.row_factory = sqlite3.Row
+        try:
+            if table == "web_events":
+                cols = "id, ts, kind, origin, path, title, target, text_preview"
+            elif table == "screenshots":
+                cols = "id, ts, app, title, ahash, path"
+            else:
+                table, cols = "events", "id, ts, kind, app, title, clip_type, clip_preview"
+            try:
+                total = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                rows = conn.execute(
+                    f"SELECT {cols} FROM {table} ORDER BY id DESC LIMIT ? OFFSET ?",
+                    (limit, offset)).fetchall()
+            except sqlite3.OperationalError:
+                return {"table": table, "total": 0, "rows": []}
+            return {"table": table, "total": total, "rows": [dict(r) for r in rows]}
+        finally:
+            conn.close()
+
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj))
 
@@ -177,6 +212,20 @@ class Handler(BaseHTTPRequestHandler):
             data = mining.mine(DB, review=review)
             data["generated_ts"] = time.time()
             return self._json(data)
+        if self.path == "/admin" or self.path.startswith("/admin?"):
+            try:
+                with open(os.path.join(BUNDLE, "ui", "admin.html"), "r", encoding="utf-8") as f:
+                    return self._send(200, '<!doctype html><meta charset="utf-8">\n' + f.read(), "text/html")
+            except OSError:
+                return self._send(500, "admin UI not found", "text/plain")
+        if self.path.split("?")[0] == "/api/admin/events":
+            if not self._admin_ok():
+                return
+            return self._json(self._admin_events(self.path.partition("?")[2]))
+        if self.path == "/api/admin/flows":
+            if not self._admin_ok():
+                return
+            return self._json(mining.mine(DB, top=200))
         if self.path == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
         self._send(404, {"error": "not found"} if False else "not found", "text/plain")
@@ -211,6 +260,48 @@ class Handler(BaseHTTPRequestHandler):
             if "screenshots" in body:
                 config.set_screenshots(body.get("screenshots"))
             return self._json(config.public_status())
+        # ---- admin (developer console) ------------------------------------
+        if self.path == "/api/admin/login":
+            body = self._read_json() or {}
+            tok = auth.login(body.get("user"), body.get("password"))
+            if not tok:
+                return self._json({"error": "invalid credentials"}, 401)
+            return self._json({"token": tok})
+        if self.path == "/api/admin/logout":
+            tok = (self.headers.get("Authorization") or "").replace("Bearer ", "").strip()
+            auth.logout(tok)
+            return self._json({"ok": True})
+        if self.path == "/api/admin/rule":
+            if not self._admin_ok():
+                return
+            b = self._read_json() or {}
+            mining.set_rule(DB, b.get("sig"), b.get("action"), b.get("label"))
+            return self._json({"ok": True})
+        if self.path == "/api/admin/purge-flow":
+            if not self._admin_ok():
+                return
+            b = self._read_json() or {}
+            return self._json({"removed": mining.purge_flow(DB, b.get("sig"))})
+        if self.path == "/api/admin/purge":
+            if not self._admin_ok():
+                return
+            b = self._read_json() or {}
+            n = mining.purge(DB, b.get("scope", "all"), b.get("before_ts"), b.get("app"))
+            return self._json({"removed": n})
+        if self.path == "/api/admin/delete-row":
+            if not self._admin_ok():
+                return
+            b = self._read_json() or {}
+            table = b.get("table") if b.get("table") in ("events", "web_events", "screenshots") else None
+            if not table or not b.get("id"):
+                return self._json({"error": "bad request"}, 400)
+            conn = sqlite3.connect(DB)
+            try:
+                n = conn.execute(f"DELETE FROM {table} WHERE id=?", (b["id"],)).rowcount
+                conn.commit()
+            finally:
+                conn.close()
+            return self._json({"removed": n})
         if self.path == "/api/ai/test":
             # Uses the local user's OWN key — billed to them, never the author.
             try:

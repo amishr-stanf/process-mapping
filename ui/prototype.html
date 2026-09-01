@@ -92,6 +92,12 @@
   .graph svg.stage { width: 100%; height: 100%; display: block; }
   .graph .hint { position: absolute; left: 18px; bottom: 14px; font-family: var(--mono); font-size: 11px;
     color: var(--faint); pointer-events: none; }
+  .emptymap { position: absolute; inset: 0; display: grid; place-items: center; padding: 30px; z-index: 3; }
+  .emptymap .em-inner { max-width: 420px; text-align: center; }
+  .emptymap .em-ico { font-size: 30px; color: var(--line-2); margin-bottom: 12px; }
+  .emptymap .em-h { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .emptymap .em-p { color: var(--muted); font-size: 13px; line-height: 1.55; }
+  .emptymap .em-hint { color: var(--faint); font-family: var(--mono); font-size: 11px; margin-top: 14px; line-height: 1.5; }
   .samplebadge { position: absolute; left: 16px; top: 14px; z-index: 2; font-family: var(--mono); font-size: 10px;
     letter-spacing: .12em; color: var(--assist); border: 1px solid color-mix(in srgb, var(--assist) 40%, transparent);
     background: color-mix(in srgb, var(--assist) 12%, var(--panel)); border-radius: 6px; padding: 3px 9px; pointer-events: none; }
@@ -303,6 +309,7 @@
     <button class="iconbtn" id="settingsBtn" type="button" title="Settings — your API key">⚙</button>
     <button class="capbtn" id="capBtn" type="button"><span class="ic">▶</span><span id="capLabel">Start mapping</span></button>
     <div class="live" id="livePill"><span class="dot"></span><span id="liveText">demo data</span></div>
+    <a class="iconbtn" id="adminLink" href="/admin" title="Developer console (restricted)" style="text-decoration:none">⛭</a>
     <button class="iconbtn quit" id="quitBtn" type="button" title="Quit the app — stops capture and closes it completely">⏻</button>
   </header>
 
@@ -492,20 +499,36 @@
 
   // Choose the data source ONCE at load: real flows from the local app if any,
   // otherwise the demo. (Reload to rebuild the map from the latest capture.)
-  // Only switch the map to real data once something has actually REPEATED —
-  // a single one-off session is noise, and showing it would replace the
-  // illustrative sample with a meaningless 3-node graph on day one.
+  // Data source. On a real install (backend reachable) we NEVER show sample
+  // data — a new user starts clean and only sees their own activity, once a
+  // flow has actually REPEATED. The illustrative sample is reserved for the
+  // hosted demo, where there is no backend to capture anything.
   let APPS = DEMO_APPS, WORKFLOWS = DEMO_WORKFLOWS, DATA_MODE = "demo";
   try {
     const fd = await fetch("/api/flows").then(r => r.ok ? r.json() : null);
-    const repeated = (fd && fd.flows || []).filter(f => f.count >= 2);
-    if (repeated.length) {
-      const t = transformFlows({ flows: repeated });
-      APPS = t.APPS; WORKFLOWS = t.WORKFLOWS; DATA_MODE = "live";
+    if (fd) {
+      const repeated = (fd.flows || []).filter(f => f.count >= 2);
+      if (repeated.length) {
+        const t = transformFlows({ flows: repeated });
+        APPS = t.APPS; WORKFLOWS = t.WORKFLOWS; DATA_MODE = "live";
+      } else {
+        APPS = {}; WORKFLOWS = []; DATA_MODE = "empty";   // clean slate
+      }
       const b = document.getElementById("sampleBadge"); if (b) b.style.display = "none";
     }
   } catch (e) {}
   window.__mode = DATA_MODE;
+  if (DATA_MODE === "empty") {
+    const g = document.querySelector(".graph");
+    const o = document.createElement("div");
+    o.className = "emptymap";
+    o.innerHTML = `<div class="em-inner"><div class="em-ico">◇</div>
+      <div class="em-h">Your map builds as you work</div>
+      <div class="em-p">Nothing is here yet because nothing has repeated yet. Keep using your apps normally —
+      when the same sequence of steps happens twice, it appears here as a flow.</div>
+      <div class="em-hint">Capture is running. For web apps (Salesforce, webmail), also load the Chrome extension.</div></div>`;
+    g.appendChild(o);
+  }
 
   // Flag intra-app workflows (all steps in one app) — these become self-loops.
   WORKFLOWS.forEach(w => { w.intra = w.steps.every(s => s.app === w.steps[0].app); w.app0 = w.steps[0].app; });
@@ -719,6 +742,14 @@
     const tot=WORKFLOWS.reduce((s,w)=>s+w.perWeek*w.minEach,0);
     const auto=WORKFLOWS.filter(w=>w.auto==="auto").reduce((s,w)=>s+w.perWeek*w.minEach,0);
     const n = WORKFLOWS.length;
+    if (DATA_MODE === "empty") {
+      focus.innerHTML = `<div class="flabel"><span class="eyebrow">Overview · your activity</span></div>
+        <h2>No repeated tasks yet</h2>
+        <div class="fsub">Everything here is built from your own activity on this machine.</div>
+        <div class="note" style="margin-top:14px">A task appears once the same sequence of steps happens more than once.
+        Until then this stays empty — that's expected on a new install.</div>`;
+      return;
+    }
     focus.innerHTML=`<div class="flabel"><span class="eyebrow">Overview · ${DATA_MODE === "live" ? "your activity" : "sample data"}</span></div>
       <h2>What you repeat</h2>
       <div class="fsub">${n} repeated task${n===1?"":"s"} · ${Object.keys(APPS).length} app${Object.keys(APPS).length===1?"":"s"}</div>
@@ -775,7 +806,7 @@
   // ---- Feed (ranked flows) ---------------------------------------------
   const feed=document.getElementById("feed");
   const ranked=[...WORKFLOWS].map(w=>({w,tot:w.perWeek*w.minEach})).sort((a,b)=>b.tot-a.tot);
-  const maxTot=ranked[0].tot;
+  const maxTot=ranked.length?ranked[0].tot:1;
   document.getElementById("feedCount").textContent=WORKFLOWS.length;
   const feedCards={};
   ranked.forEach(({w,tot},i)=>{
@@ -796,6 +827,10 @@
   // ---- Drawer -----------------------------------------------------------
   const track=document.getElementById("track");
   document.getElementById("wfCount").textContent=WORKFLOWS.length+" mapped";
+  if (!WORKFLOWS.length) {
+    track.innerHTML = `<div style="color:var(--faint);font-size:12.5px;padding:14px 2px">
+      Repeated workflows will be listed here as they're detected.</div>`;
+  }
   const wfCards={};
   ranked.forEach(({w})=>{
     const card=document.createElement("div"); card.className="wf"; card.dataset.wf=w.id;

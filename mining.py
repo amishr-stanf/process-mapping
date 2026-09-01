@@ -20,6 +20,7 @@ CLI:
 """
 
 import argparse
+import hashlib
 import json
 import re
 import sqlite3
@@ -27,6 +28,51 @@ import time
 from collections import defaultdict
 
 import ai
+
+# Admin-authored rules that override the automatic clustering.
+RULES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS flow_rules (
+    sig    TEXT PRIMARY KEY,   -- sha1 of the step signature
+    action TEXT NOT NULL,      -- rename | merge | hide
+    label  TEXT,               -- new name, or the group to merge into
+    ts     REAL
+);
+"""
+
+
+def ensure_rules(conn):
+    conn.executescript(RULES_SCHEMA)
+    conn.commit()
+
+
+def sig_hash(steps):
+    """Stable id for a step signature, used to attach admin rules."""
+    raw = "|".join(f"{a}:{v}:{o}" for (a, v, o) in steps)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def load_rules(db):
+    conn = sqlite3.connect(db)
+    try:
+        ensure_rules(conn)
+        return {r[0]: {"action": r[1], "label": r[2]}
+                for r in conn.execute("SELECT sig, action, label FROM flow_rules")}
+    finally:
+        conn.close()
+
+
+def set_rule(db, sig, action, label=None):
+    conn = sqlite3.connect(db)
+    try:
+        ensure_rules(conn)
+        if action == "clear":
+            conn.execute("DELETE FROM flow_rules WHERE sig=?", (sig,))
+        else:
+            conn.execute("INSERT OR REPLACE INTO flow_rules (sig, action, label, ts) VALUES (?,?,?,?)",
+                         (sig, action, label, time.time()))
+        conn.commit()
+    finally:
+        conn.close()
 
 GAP_SECONDS = 45.0   # gap between actions that starts a new candidate flow
 MIN_STEPS = 2        # ignore trivial 1-action segments
@@ -154,14 +200,39 @@ def mine(db, review=False, top=25):
             continue
         clusters[tuple(steps)].append(seg)
 
+    # Apply admin rules: hide drops a flow; rename relabels it; merge groups
+    # several distinct signatures under one label so they count as one flow.
+    rules = load_rules(db)
+    grouped = {}   # key -> {"steps", "segs", "label", "sigs"}
+    for sig, segs in clusters.items():
+        h = sig_hash(sig)
+        rule = rules.get(h) or {}
+        if rule.get("action") == "hide":
+            continue
+        label = rule.get("label") if rule.get("action") in ("rename", "merge") else None
+        key = ("L:" + label) if (rule.get("action") == "merge" and label) else h
+        g = grouped.setdefault(key, {"steps": sig, "segs": [], "label": label, "sigs": []})
+        g["segs"].extend(segs)
+        g["sigs"].append(h)
+        if label and not g["label"]:
+            g["label"] = label
+        # keep the richest signature as the representative step list
+        if len(sig) > len(g["steps"]):
+            g["steps"] = sig
+
     flows = []
-    for i, (sig, segs) in enumerate(clusters.items()):
+    for i, (key, g) in enumerate(grouped.items()):
+        sig, segs = g["steps"], g["segs"]
         durs = [s[-1]["ts"] - s[0]["ts"] for s in segs]
         apps = list(dict.fromkeys(st[0] for st in sig))  # unique, in order
         avg = sum(durs) / len(durs) if durs else 0.0
+        auto_name = (apps[0] + " (in-app)") if len(apps) == 1 else " → ".join(apps[:4])
         flows.append({
             "id": i,
-            "name": (apps[0] + " (in-app)") if len(apps) == 1 else " → ".join(apps[:4]),
+            "sig": g["sigs"][0],
+            "sigs": g["sigs"],
+            "name": g["label"] or auto_name,
+            "labeled": bool(g["label"]),
             "count": len(segs),
             "cross_app": len(apps) > 1,
             "apps": apps,
@@ -227,6 +298,70 @@ def ai_review(flows):
         return {"reviewed": True, "count": len(by_id)}
     except Exception as e:
         return {"reviewed": False, "reason": f"AI review failed: {e}"}
+
+
+def purge_flow(db, sig):
+    """Delete the captured events behind every occurrence of one flow."""
+    actions = load_actions(db)
+    windows = []
+    for seg in segment(actions):
+        steps = _steps(seg)
+        if len(steps) >= MIN_STEPS and sig_hash(tuple(steps)) == sig:
+            windows.append((seg[0]["ts"], seg[-1]["ts"]))
+    if not windows:
+        return 0
+    conn = sqlite3.connect(db)
+    removed = 0
+    try:
+        for a, b in windows:
+            cur = conn.execute("DELETE FROM events WHERE ts BETWEEN ? AND ?", (a, b))
+            removed += cur.rowcount or 0
+            try:
+                cur = conn.execute("DELETE FROM web_events WHERE ts BETWEEN ? AND ?", (a, b))
+                removed += cur.rowcount or 0
+            except sqlite3.OperationalError:
+                pass
+        conn.execute("DELETE FROM flow_rules WHERE sig=?", (sig,))
+        conn.commit()
+    finally:
+        conn.close()
+    return removed
+
+
+def purge(db, scope="all", before_ts=None, app=None):
+    """Bulk delete captured data. scope: all | desktop | web | screenshots."""
+    conn = sqlite3.connect(db)
+    removed = 0
+    try:
+        targets = []
+        if scope in ("all", "desktop"):
+            targets.append("events")
+        if scope in ("all", "web"):
+            targets.append("web_events")
+        if scope in ("all", "screenshots"):
+            targets.append("screenshots")
+        for t in targets:
+            sql, args = f"DELETE FROM {t}", []
+            where = []
+            if before_ts:
+                where.append("ts < ?"); args.append(before_ts)
+            if app and t == "events":
+                where.append("app = ?"); args.append(app)
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            try:
+                removed += conn.execute(sql, args).rowcount or 0
+            except sqlite3.OperationalError:
+                pass
+        if scope == "all" and not before_ts and not app:
+            try:
+                conn.execute("DELETE FROM flow_rules")
+            except sqlite3.OperationalError:
+                pass
+        conn.commit()
+    finally:
+        conn.close()
+    return removed
 
 
 def _fmt(sec):
