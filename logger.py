@@ -61,6 +61,20 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_ts   ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);
 CREATE INDEX IF NOT EXISTS idx_events_hash ON events(clip_hash);
+
+-- In-app control interactions, captured generically from the OS accessibility
+-- layer so this works in ANY desktop app, not just ones we wrote a probe for.
+CREATE TABLE IF NOT EXISTS ui_events (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      REAL NOT NULL,
+    app     TEXT,      -- owning executable
+    verb    TEXT,      -- invoke | edit | select | field | dialog | menu
+    control TEXT,      -- the control's accessible name ("Fill Color", "Find")
+    role    TEXT,      -- button | text | listitem | dialog ...
+    detail  TEXT       -- optional enrichment (e.g. Excel range/formula)
+);
+CREATE INDEX IF NOT EXISTS idx_ui_ts  ON ui_events(ts);
+CREATE INDEX IF NOT EXISTS idx_ui_app ON ui_events(app);
 """
 
 
@@ -134,6 +148,59 @@ class Capture:
         shot_mode = _cap.get("mode", "focused")
         shots_dir = os.path.join(os.path.dirname(os.path.abspath(self.db_path)), "shots")
         last_shot = 0.0
+
+        # Generic in-app sensor (OS accessibility layer). Events arrive on the
+        # sensor's own thread, so buffer them and flush from this one -- SQLite
+        # connections are thread-affine.
+        ui_buf, ui_lock = [], threading.Lock()
+        uia = None
+        if sys.platform == "win32" and _cap.get("in_app", True):
+            try:
+                import sensor_uia
+
+                def _on_ui(hwnd, verb, control, role):
+                    app = sensor_uia.process_for_hwnd(hwnd)
+                    with ui_lock:
+                        if len(ui_buf) < 500:      # bound memory if the UI is busy
+                            ui_buf.append((time.time(), app, verb, control, role, None))
+
+                uia = sensor_uia.UIASensor(_on_ui)
+                uia.start()
+            except Exception:
+                uia = None
+
+        # File activity: links a download to the file later opened, and an edit
+        # to the document saved from it.
+        files = None
+        if _cap.get("files", True):
+            try:
+                import sensor_files
+
+                def _on_file(verb, name, folder):
+                    with ui_lock:
+                        if len(ui_buf) < 500:
+                            ui_buf.append((time.time(), "files", verb, name, "file", folder))
+
+                files = sensor_files.FileSensor(_on_file)
+                files.start()
+            except Exception:
+                files = None
+
+        # Excel enrichment: exact range + formula, which accessibility can't see.
+        xl = None
+        if sys.platform == "win32" and _cap.get("office", True):
+            try:
+                import probe_excel
+
+                def _on_xl(verb, control, detail):
+                    with ui_lock:
+                        if len(ui_buf) < 500:
+                            ui_buf.append((time.time(), "excel", verb, control, "range", detail))
+
+                xl = probe_excel.ExcelProbe(_on_xl)
+                xl.start()
+            except Exception:
+                xl = None
         try:
             while not self._stop.is_set():
                 # A transient sensor error must skip one poll, never kill capture.
@@ -160,10 +227,25 @@ class Capture:
                         import screen
                         screen.capture(conn, app, title, shots_dir, mode=shot_mode)
                         last_shot = time.time()
+
+                    # flush buffered in-app control events
+                    if ui_buf:
+                        with ui_lock:
+                            batch, ui_buf[:] = list(ui_buf), []
+                        conn.executemany(
+                            "INSERT INTO ui_events (ts, app, verb, control, role, detail) "
+                            "VALUES (?,?,?,?,?,?)", batch)
+                        conn.commit()
                 except Exception:
                     pass
                 self._stop.wait(POLL_INTERVAL)
         finally:
+            for sensor in (uia, files, xl):
+                if sensor:
+                    try:
+                        sensor.stop()
+                    except Exception:
+                        pass
             conn.close()
 
 

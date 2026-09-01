@@ -188,6 +188,21 @@ def load_actions(db):
             elif k == "clipboard":
                 actions.append({"ts": r["ts"], "app": _app_name(r["app"]), "verb": "copy",
                                 "obj": "clip:" + (r["clip_type"] or "?"), "_text": r["clip_preview"]})
+        # In-app control interactions (generic OS accessibility sensor).
+        try:
+            ui = conn.execute("SELECT ts, app, verb, control, role, detail "
+                              "FROM ui_events ORDER BY ts").fetchall()
+        except sqlite3.OperationalError:
+            ui = []
+        for r in ui:
+            ctrl = normalize(r["control"])
+            if not ctrl:
+                continue
+            obj = ctrl if not r["detail"] else f"{ctrl} {normalize(r['detail'])}"
+            actions.append({"ts": r["ts"], "app": _app_name(r["app"]),
+                            "verb": r["verb"] or "invoke", "obj": obj,
+                            "_text": r["control"]})
+
         try:
             web = conn.execute("SELECT ts, kind, origin, path, title, target, text_preview "
                                "FROM web_events ORDER BY ts").fetchall()
@@ -307,7 +322,13 @@ def _steps(seg):
 # --- deterministic automatability scoring -----------------------------------
 # Repetition is ONE signal, not the gate. A sequence of concrete UI actions on a
 # reachable interface is automatable the first time we see it.
-ACTIONABLE = {"click": 12, "input": 14, "visit": 7, "copy": 8, "carry": 10, "read": 3, "focus": 1}
+ACTIONABLE = {
+    "click": 12, "input": 14, "visit": 7, "copy": 8, "carry": 10, "read": 3, "focus": 1,
+    # in-app control interactions carry real automation signal
+    "invoke": 12, "edit": 11, "select": 8, "dialog": 9, "menu": 8, "field": 2,
+    # enriched by an app-specific probe (exact range/formula) — the strongest signal
+    "cell": 15, "formula": 16, "save": 9,
+}
 
 
 def auto_score(steps, count):

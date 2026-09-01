@@ -1,0 +1,256 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workflow Fleet Report</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* Light palette is the complete set; the other modes redefine only tokens. */
+  :root {
+    --bg:        #F7F6F3;
+    --surface:   #FFFFFF;
+    --surface-2: #F1EFEA;
+    --line:      #E2DFD7;
+    --line-2:    #CFCABE;
+    --text:      #1A1A18;
+    --muted:     #5C5A54;
+    --faint:     #8A867C;
+    --accent:    #A87A12;
+    --accent-2:  #7A5807;
+    --accent-soft: rgba(168,122,18,0.10);
+    --ok:        #1F7A4D;
+    --ok-soft:   rgba(31,122,77,0.10);
+    --warn:      #9A6212;
+    --warn-soft: rgba(154,98,18,0.10);
+    --blind:     #A33B34;
+    --blind-soft:rgba(163,59,52,0.09);
+    --bar:       rgba(168,122,18,0.22);
+    --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #101216;
+      --surface:   #171A20;
+      --surface-2: #1D2128;
+      --line:      #282D36;
+      --line-2:    #3A404B;
+      --text:      #EDEBE6;
+      --muted:     #A2A79F;
+      --faint:     #6E7580;
+      --accent:    #E8B44A;
+      --accent-2:  #F5CE7E;
+      --accent-soft: rgba(232,180,74,0.13);
+      --ok:        #4FCB8E;
+      --ok-soft:   rgba(79,203,142,0.12);
+      --warn:      #E0A64A;
+      --warn-soft: rgba(224,166,74,0.12);
+      --blind:     #E5726A;
+      --blind-soft:rgba(229,114,106,0.12);
+      --bar:       rgba(232,180,74,0.24);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#101216; --surface:#171A20; --surface-2:#1D2128; --line:#282D36; --line-2:#3A404B;
+    --text:#EDEBE6; --muted:#A2A79F; --faint:#6E7580;
+    --accent:#E8B44A; --accent-2:#F5CE7E; --accent-soft:rgba(232,180,74,0.13);
+    --ok:#4FCB8E; --ok-soft:rgba(79,203,142,0.12);
+    --warn:#E0A64A; --warn-soft:rgba(224,166,74,0.12);
+    --blind:#E5726A; --blind-soft:rgba(229,114,106,0.12);
+    --bar:rgba(232,180,74,0.24);
+  }
+  :root[data-theme="light"] {
+    --bg:#F7F6F3; --surface:#FFFFFF; --surface-2:#F1EFEA; --line:#E2DFD7; --line-2:#CFCABE;
+    --text:#1A1A18; --muted:#5C5A54; --faint:#8A867C;
+    --accent:#A87A12; --accent-2:#7A5807; --accent-soft:rgba(168,122,18,0.10);
+    --ok:#1F7A4D; --ok-soft:rgba(31,122,77,0.10);
+    --warn:#9A6212; --warn-soft:rgba(154,98,18,0.10);
+    --blind:#A33B34; --blind-soft:rgba(163,59,52,0.09);
+    --bar:rgba(168,122,18,0.22);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 52px 24px 96px; }
+  .mono { font-family: var(--mono); }
+  .tnum, td.num, th.num { font-variant-numeric: tabular-nums; }
+  td.num, th.num { text-align: right; }
+
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--faint); }
+  h1 { font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -.02em; margin: 10px 0 14px; text-wrap: balance; }
+  .lede { font-size: 17.5px; color: var(--muted); max-width: 66ch; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: 25px; letter-spacing: -.015em;
+    margin: 0 0 6px; text-wrap: balance; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  p { max-width: 70ch; }
+  section { margin-top: 52px; }
+  .sec-head { border-top: 1px solid var(--line); padding-top: 18px; margin-bottom: 20px; }
+  .sec-head .eyebrow { display: block; margin-bottom: 8px; }
+  .sec-head p { color: var(--muted); margin: 6px 0 0; font-size: 15px; }
+  .sec-head.hot { border-top: 2px solid var(--accent); }
+
+  /* chips */
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono);
+    font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 4px; border: 1px solid; white-space: nowrap; }
+  .chip.full  { color: var(--ok);    background: var(--ok-soft);    border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+  .chip.part  { color: var(--warn);  background: var(--warn-soft);  border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+  .chip.blind { color: var(--blind); background: var(--blind-soft); border-color: color-mix(in srgb, var(--blind) 35%, transparent); }
+  .chip.none  { color: var(--faint); background: var(--surface-2);  border-color: var(--line-2); }
+  .chip.gold  { color: var(--accent); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .src { font-family: var(--mono); font-size: 9.5px; color: var(--faint); margin-left: 6px; letter-spacing: .08em; }
+
+  /* stat grid */
+  /* Dividers are drawn as inset shadows rather than grid gaps, so a part-filled
+     last row leaves clean surface instead of a slab of divider colour. */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    overflow: hidden; margin-top: 24px; }
+  .stat { background: var(--surface); padding: 15px 17px;
+    box-shadow: inset 1px 1px 0 var(--line); }
+  .stat .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .stat .v { font-family: var(--serif); font-size: 28px; font-weight: 600; margin-top: 4px; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; }
+  .stat .v small { font-family: var(--sans); font-size: 13px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+  .stat.hi .v { color: var(--accent); }
+
+  /* tables */
+  /* Wide tables scroll inside their own container rather than squeezing the
+     name column down to one word per line. */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); margin-top: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 660px; }
+  table.narrow { min-width: 380px; }
+  th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--faint); font-weight: 500;
+    padding: 11px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+  td.strong { color: var(--text); font-weight: 500; }
+  td.mono { font-family: var(--mono); font-size: 12.5px; }
+  td.flow { color: var(--text); min-width: 230px; }
+  td.flow .path { font-family: var(--mono); font-size: 11.5px; color: var(--accent);
+    display: block; margin-top: 3px; overflow-wrap: anywhere; }
+  td.flow .why { font-size: 12.5px; color: var(--faint); display: block; margin-top: 3px; max-width: 46ch; }
+  td.people { font-size: 12.5px; min-width: 170px; overflow-wrap: anywhere; }
+  td.people b { color: var(--text); font-weight: 500; }
+  .sig { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+  tr.hot td { background: var(--accent-soft); }
+
+  /* app time bars — label and value on one line, track full width beneath, so
+     the bar stays readable however narrow the column gets */
+  .bars { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .bars .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: baseline; }
+  .bars .lbl { font-family: var(--mono); font-size: 12.5px; color: var(--text); overflow-wrap: anywhere; }
+  .bars .val { font-family: var(--mono); font-size: 12px; color: var(--muted);
+    font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  .bars .track { grid-column: 1 / -1; background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 3px; height: 9px; overflow: hidden; }
+  .bars .fill { background: var(--bar); border-right: 2px solid var(--accent); height: 100%; }
+
+  /* company block */
+  .co { border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+    padding: 20px 22px 24px; margin-top: 18px; }
+  .co-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 4px; }
+  .co-head h3 { font-family: var(--serif); font-size: 21px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+  .co-head .meta { font-family: var(--mono); font-size: 11.5px; color: var(--faint);
+    font-variant-numeric: tabular-nums; }
+  .sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--faint); margin: 22px 0 0; }
+  .grid2 { display: grid; grid-template-columns: 1.25fr 1fr; gap: 26px; align-items: start; }
+  /* Grid items default to min-width:auto and would otherwise refuse to shrink
+     below the table's min-width, pushing the whole page sideways. */
+  .grid2 > * { min-width: 0; }
+  .tablewrap { max-width: 100%; }
+
+  /* callout */
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 19px; margin-top: 20px; }
+  .callout h3 { font-family: var(--serif); font-size: 17px; margin-bottom: 6px; }
+  .callout p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .callout.warn { border-left-color: var(--blind); }
+  .callout ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
+  .callout li { margin-bottom: 2px; overflow-wrap: anywhere; }
+
+  .empty { color: var(--faint); font-size: 14px; font-style: italic; margin-top: 12px; }
+  .footer { margin-top: 60px; border-top: 1px solid var(--line); padding-top: 18px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--faint); line-height: 1.9; }
+  @media (max-width: 860px) {
+    .grid2 { grid-template-columns: 1fr; gap: 8px; }
+    .wrap { padding: 34px 16px 64px; }
+    .co { padding: 16px 14px 20px; }
+  }
+</style>
+<div class="wrap">
+<header>
+<span class="eyebrow">workflow-mapper · fleet roll-up</span>
+<h1>Where the repeated work is</h1>
+<p class="lede">14 exports from 13 people across 3 companies, covering 2026-08-25 to 2026-09-01. Ranked by what one automation would buy back.</p>
+<div class="stats">
+<div class="stat"><div class="k">Companies</div><div class="v">3</div></div>
+<div class="stat"><div class="k">People</div><div class="v">13 <small>14 installs</small></div></div>
+<div class="stat"><div class="k">Actions</div><div class="v">22,222</div></div>
+<div class="stat"><div class="k">Active time</div><div class="v">161 <small>hours</small></div></div>
+<div class="stat"><div class="k">Distinct apps</div><div class="v">12</div></div>
+<div class="stat"><div class="k">Distinct flows</div><div class="v">47</div></div>
+<div class="stat hi"><div class="k">Shared processes</div><div class="v">11 <small>2+ people</small></div></div>
+<div class="stat hi"><div class="k">Shared time</div><div class="v">63 <small>hours / period</small></div></div>
+</div>
+</header>
+<section>
+<div class="sec-head hot">
+<span class="eyebrow">Priority one</span>
+<h2>Shared processes</h2>
+<p>Flows with an identical step signature seen at more than one person. These are the highest-value targets: one automation is built once and removes the same work from every person on the row. Rows spanning more than one company are worth the most — they are a product, not a favour.</p>
+</div>
+<div class="tablewrap"><table><thead><tr><th>Process</th><th>Seen by</th><th class="num">Runs</th><th class="num">Avg run</th><th class="num">Est. hours</th><th>Automatability</th></tr></thead><tbody>
+<tr><td class="flow"><span class="strong">Re-key portal claims into the tracker</span><span class="path">chrome → excel</span><span class="why">Copies each open claim from the web portal into the shared tracker workbook.</span><span class="sig">84aca8fc0f</span></td><td class="people"><b>9</b> people<br>a.whitfield@beaconlegal.com, claire.d@beaconlegal.com, dee@northwind.co, jane@acme.com +5 more<br><span class="chip gold">3 companies</span></td><td class="num">78</td><td class="num">10m 26s</td><td class="num">13.6</td><td><span class="chip full">auto 91</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">Assemble the month-end pack</span><span class="path">excel → acrobat → winword</span><span class="why">Merges the ledger extract with the signed PDFs into a Word pack.</span><span class="sig">3a64728f27</span></td><td class="people"><b>7</b> people<br>claire.d@beaconlegal.com, dee@northwind.co, m.rossi@beaconlegal.com, marcus.hall@northwind.co +3 more<br><span class="chip gold">2 companies</span></td><td class="num">65</td><td class="num">11m 32s</td><td class="num">12.5</td><td><span class="chip part">assist 63</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">Prep daily insurance report</span><span class="path">outlook → excel → winword</span><span class="why">Pulls the overnight bank file, reformats it, writes the summary and mails it.</span><span class="sig">b340de4820</span></td><td class="people"><b>7</b> people<br>dee@northwind.co, l.ortiz@acme.com, m.rossi@beaconlegal.com, p.novak@northwind.co +3 more<br><span class="chip gold">3 companies</span></td><td class="num">60</td><td class="num">6m 52s</td><td class="num">6.9</td><td><span class="chip full">auto 84</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">outlook → explorer → excel</span><span class="path">outlook → explorer → excel</span><span class="why">9 concrete actions, partly web, seen 3×</span><span class="sig">c7ab1c4a93</span></td><td class="people"><b>3</b> people<br>a.whitfield@beaconlegal.com, jane@acme.com, yuki.t@northwind.co<br><span class="chip gold">3 companies</span></td><td class="num">24</td><td class="num">11m 47s</td><td class="num">4.7</td><td><span class="chip part">assist 63</span></td></tr><tr><td class="flow"><span class="strong">Reconcile two workbooks</span><span class="path">excel</span><span class="why">6 concrete actions, partly web, seen 7×</span><span class="sig">3ef4c13f6f</span></td><td class="people"><b>3</b> people<br>jane@acme.com, l.ortiz@acme.com, sam.chen@acme.com</td><td class="num">13</td><td class="num">8m 48s</td><td class="num">1.9</td><td><span class="chip full">auto 79</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">Pipeline hygiene sweep</span><span class="path">salesforce → chrome → excel</span><span class="why">9 concrete actions, partly web, seen 4×</span><span class="sig">767917d620</span></td><td class="people"><b>2</b> people<br>a.whitfield@beaconlegal.com, claire.d@beaconlegal.com</td><td class="num">18</td><td class="num">17m 25s</td><td class="num">5.2</td><td><span class="chip part">assist 55</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">Reconcile two workbooks</span><span class="path">excel</span><span class="why">6 concrete actions, partly web, seen 11×</span><span class="sig">8a34039ada</span></td><td class="people"><b>2</b> people<br>a.whitfield@beaconlegal.com, t.osei@beaconlegal.com</td><td class="num">15</td><td class="num">19m 09s</td><td class="num">4.8</td><td><span class="chip full">auto 77</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">teams → winword</span><span class="path">teams → winword</span><span class="why">6 concrete actions, partly web, seen 4×</span><span class="sig">1344ae62b8</span></td><td class="people"><b>2</b> people<br>p.novak@northwind.co, yuki.t@northwind.co</td><td class="num">16</td><td class="num">17m 42s</td><td class="num">4.7</td><td><span class="chip blind">manual 30</span></td></tr><tr><td class="flow"><span class="strong">Rate lookup and paste</span><span class="path">chrome → notepad → excel</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">3b65dfa6c8</span></td><td class="people"><b>2</b> people<br>l.ortiz@acme.com, sam.chen@acme.com</td><td class="num">23</td><td class="num">11m 39s</td><td class="num">4.5</td><td><span class="chip full">auto 80</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">Rate lookup and paste</span><span class="path">chrome → notepad → excel</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">4c29ee0ef2</span></td><td class="people"><b>2</b> people<br>dee@northwind.co, p.novak@northwind.co</td><td class="num">34</td><td class="num">4m 38s</td><td class="num">2.6</td><td><span class="chip full">auto 80</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">Board chart refresh</span><span class="path">excel → powerpoint</span><span class="why">6 concrete actions, partly web, seen 4×</span><span class="sig">bdedd5dc71</span></td><td class="people"><b>2</b> people<br>jane@acme.com, raj@acme.com</td><td class="num">7</td><td class="num">16m 19s</td><td class="num">1.9</td><td><span class="chip full">auto 86</span><span class="src">AI</span></td></tr>
+</tbody></table></div>
+<div class="callout"><h3>Same process at more than one client</h3><p>4 processes appear at multiple companies. Build these first — the same artefact ships to every client.</p><ul><li><b>Re-key portal claims into the tracker</b> — Acme Insurance, Beacon Legal LLP, Northwind Freight · 9 people · 13.6 h</li><li><b>Assemble the month-end pack</b> — Beacon Legal LLP, Northwind Freight · 7 people · 12.5 h</li><li><b>Prep daily insurance report</b> — Acme Insurance, Beacon Legal LLP, Northwind Freight · 7 people · 6.9 h</li><li><b>outlook → explorer → excel</b> — Acme Insurance, Beacon Legal LLP, Northwind Freight · 3 people · 4.7 h</li></ul></div>
+</section>
+<section>
+<div class="sec-head"><span class="eyebrow">Fleet</span><h2>Across every company</h2><p>Where the hours actually go, and how the client companies compare.</p></div>
+<div class="grid2">
+<div>
+<p class="sub" style="margin-top:0">Companies</p>
+<div class="tablewrap"><table class="narrow"><thead><tr><th>Company</th><th class="num">People</th><th class="num">Actions</th><th class="num">Active h</th><th class="num">Flows</th><th class="num">Shared</th></tr></thead><tbody>
+<tr><td class="strong">Northwind Freight</td><td class="num">4</td><td class="num">7,726</td><td class="num">61</td><td class="num">16</td><td class="num">5</td></tr>
+<tr><td class="strong">Beacon Legal LLP</td><td class="num">5</td><td class="num">7,735</td><td class="num">51</td><td class="num">20</td><td class="num">5</td></tr>
+<tr><td class="strong">Acme Insurance</td><td class="num">4</td><td class="num">6,761</td><td class="num">49</td><td class="num">18</td><td class="num">5</td></tr>
+</tbody></table></div>
+</div>
+<div>
+<p class="sub" style="margin-top:0">Time by app</p>
+<div class="bars"><div class="row"><div class="lbl">excel</div><div class="val">54.1 h</div><div class="track"><div class="fill" style="width:100.0%"></div></div></div><div class="row"><div class="lbl">chrome</div><div class="val">30.4 h</div><div class="track"><div class="fill" style="width:56.3%"></div></div></div><div class="row"><div class="lbl">outlook</div><div class="val">21.3 h</div><div class="track"><div class="fill" style="width:39.4%"></div></div></div><div class="row"><div class="lbl">winword</div><div class="val">16.6 h</div><div class="track"><div class="fill" style="width:30.8%"></div></div></div><div class="row"><div class="lbl">acrobat</div><div class="val">9.0 h</div><div class="track"><div class="fill" style="width:16.7%"></div></div></div><div class="row"><div class="lbl">sap</div><div class="val">7.6 h</div><div class="track"><div class="fill" style="width:14.0%"></div></div></div><div class="row"><div class="lbl">teams</div><div class="val">6.4 h</div><div class="track"><div class="fill" style="width:11.8%"></div></div></div><div class="row"><div class="lbl">powerpoint</div><div class="val">5.4 h</div><div class="track"><div class="fill" style="width:10.0%"></div></div></div><div class="row"><div class="lbl">explorer</div><div class="val">5.1 h</div><div class="track"><div class="fill" style="width:9.4%"></div></div></div></div>
+</div>
+</div>
+<p class="sub">Most automatable flows, everyone</p>
+<div class="tablewrap"><table><thead><tr><th>Flow</th><th>Seen by</th><th class="num">Runs</th><th class="num">Avg run</th><th class="num">Est. hours</th><th>Automatability</th></tr></thead><tbody>
+<tr class="hot"><td class="flow"><span class="strong">Re-key portal claims into the tracker</span><span class="path">chrome → excel</span><span class="why">Copies each open claim from the web portal into the shared tracker workbook.</span><span class="sig">84aca8fc0f</span></td><td class="people"><b>9</b> people<br>a.whitfield@beaconlegal.com, claire.d@beaconlegal.com, dee@northwind.co, jane@acme.com +5 more<br><span class="chip gold">3 companies</span></td><td class="num">78</td><td class="num">10m 26s</td><td class="num">13.6</td><td><span class="chip full">auto 91</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">excel → chrome → excel</span><span class="path">excel → chrome</span><span class="why">9 concrete actions, partly web, seen 10×</span><span class="sig">ebee7c1892</span></td><td class="people"><b>1</b> person<br>sam.chen@acme.com</td><td class="num">10</td><td class="num">8m 44s</td><td class="num">1.5</td><td><span class="chip full">auto 90</span></td></tr><tr><td class="flow"><span class="strong">FX rate refresh</span><span class="path">excel → chrome</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">b0d0d08e27</span></td><td class="people"><b>1</b> person<br>marcus.hall@northwind.co</td><td class="num">3</td><td class="num">20m 23s</td><td class="num">1.0</td><td><span class="chip full">auto 88</span><span class="src">AI</span></td></tr><tr class="hot"><td class="flow"><span class="strong">Board chart refresh</span><span class="path">excel → powerpoint</span><span class="why">6 concrete actions, partly web, seen 4×</span><span class="sig">bdedd5dc71</span></td><td class="people"><b>2</b> people<br>jane@acme.com, raj@acme.com</td><td class="num">7</td><td class="num">16m 19s</td><td class="num">1.9</td><td><span class="chip full">auto 86</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">outlook → excel → sap</span><span class="path">outlook → excel → sap</span><span class="why">9 concrete actions, partly web, seen 10×</span><span class="sig">b9380f32bc</span></td><td class="people"><b>1</b> person<br>raj@acme.com</td><td class="num">10</td><td class="num">19m 48s</td><td class="num">3.3</td><td><span class="chip full">auto 85</span></td></tr><tr><td class="flow"><span class="strong">outlook → excel → sap</span><span class="path">outlook → excel → sap</span><span class="why">9 concrete actions, partly web, seen 2×</span><span class="sig">c1923599d4</span></td><td class="people"><b>1</b> person<br>sam.chen@acme.com</td><td class="num">2</td><td class="num">3m 10s</td><td class="num">0.1</td><td><span class="chip full">auto 85</span></td></tr><tr class="hot"><td class="flow"><span class="strong">Prep daily insurance report</span><span class="path">outlook → excel → winword</span><span class="why">Pulls the overnight bank file, reformats it, writes the summary and mails it.</span><span class="sig">b340de4820</span></td><td class="people"><b>7</b> people<br>dee@northwind.co, l.ortiz@acme.com, m.rossi@beaconlegal.com, p.novak@northwind.co +3 more<br><span class="chip gold">3 companies</span></td><td class="num">60</td><td class="num">6m 52s</td><td class="num">6.9</td><td><span class="chip full">auto 84</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">excel → chrome → excel</span><span class="path">excel → chrome</span><span class="why">9 concrete actions, partly web, seen 8×</span><span class="sig">4aeb8133aa</span></td><td class="people"><b>1</b> person<br>dee@northwind.co</td><td class="num">16</td><td class="num">23m 22s</td><td class="num">6.2</td><td><span class="chip full">auto 83</span></td></tr><tr><td class="flow"><span class="strong">excel → chrome → excel</span><span class="path">excel → chrome</span><span class="why">9 concrete actions, partly web, seen 2×</span><span class="sig">984c8cd0ea</span></td><td class="people"><b>1</b> person<br>t.osei@beaconlegal.com</td><td class="num">2</td><td class="num">23m 31s</td><td class="num">0.8</td><td><span class="chip full">auto 83</span></td></tr><tr><td class="flow"><span class="strong">excel → powerpoint</span><span class="path">excel → powerpoint</span><span class="why">6 concrete actions, partly web, seen 6×</span><span class="sig">9f1c4c5a21</span></td><td class="people"><b>1</b> person<br>a.whitfield@beaconlegal.com</td><td class="num">6</td><td class="num">5m 18s</td><td class="num">0.5</td><td><span class="chip full">auto 83</span></td></tr><tr><td class="flow"><span class="strong">Post the weekly journal</span><span class="path">outlook → excel → sap</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">a545cf4bd6</span></td><td class="people"><b>1</b> person<br>l.ortiz@acme.com</td><td class="num">14</td><td class="num">22m 31s</td><td class="num">5.3</td><td><span class="chip full">auto 82</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">Post the weekly journal</span><span class="path">outlook → excel → sap</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">c349259901</span></td><td class="people"><b>1</b> person<br>p.novak@northwind.co</td><td class="num">9</td><td class="num">24m 52s</td><td class="num">3.7</td><td><span class="chip full">auto 82</span><span class="src">AI</span></td></tr>
+</tbody></table></div>
+</section>
+<section>
+<div class="sec-head"><span class="eyebrow">By company</span><h2>Client detail</h2><p>One block per company: the people, their top apps, and the flows worth attacking there. Rows highlighted in gold are shared with a colleague.</p></div>
+<div class="co"><div class="co-head"><h3>Northwind Freight</h3><span class="meta">2026-08-25 → 2026-09-01 · 4 people · 61 h active · 16 flows · 5 shared</span></div><p class="sub">People</p><div class="tablewrap"><table><thead><tr><th>Person</th><th class="num">Actions</th><th class="num">Sequences</th><th class="num">Active h</th><th class="num">Apps</th><th class="num">Flows</th><th>Top flow</th><th>Last export</th></tr></thead><tbody><tr><td class="strong">dee@northwind.co<br><span class="sig">2 installs</span></td><td class="num">3,389</td><td class="num">96</td><td class="num">30.8</td><td class="num">9</td><td class="num">8</td><td>Re-key portal claims into the tracker <span class="chip full">auto 91</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">p.novak@northwind.co</td><td class="num">1,807</td><td class="num">130</td><td class="num">13.5</td><td class="num">8</td><td class="num">7</td><td>Re-key portal claims into the tracker <span class="chip full">auto 91</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">yuki.t@northwind.co</td><td class="num">1,353</td><td class="num">32</td><td class="num">8.5</td><td class="num">8</td><td class="num">5</td><td>Assemble the month-end pack <span class="chip part">assist 63</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">marcus.hall@northwind.co</td><td class="num">1,177</td><td class="num">55</td><td class="num">7.8</td><td class="num">6</td><td class="num">4</td><td>Re-key portal claims into the tracker <span class="chip full">auto 91</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr></tbody></table></div><div class="grid2" style="margin-top:6px"><div><p class="sub">Flows worth attacking</p><div class="tablewrap"><table><thead><tr><th>Flow</th><th>Seen by</th><th class="num">Runs</th><th class="num">Avg run</th><th class="num">Est. h</th><th>Automatability</th></tr></thead><tbody><tr class="hot"><td class="flow"><span class="strong">Re-key portal claims into the tracker</span><span class="path">chrome → excel</span><span class="why">Copies each open claim from the web portal into the shared tracker workbook.</span><span class="sig">84aca8fc0f</span></td><td class="people"><b>3</b> people<br>dee@northwind.co, marcus.hall@northwind.co, p.novak@northwind.co</td><td class="num">29</td><td class="num">9m 39s</td><td class="num">4.7</td><td><span class="chip full">auto 91</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">FX rate refresh</span><span class="path">excel → chrome</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">b0d0d08e27</span></td><td class="people"><b>1</b> person<br>marcus.hall@northwind.co</td><td class="num">3</td><td class="num">20m 23s</td><td class="num">1.0</td><td><span class="chip full">auto 88</span><span class="src">AI</span></td></tr><tr class="hot"><td class="flow"><span class="strong">Prep daily insurance report</span><span class="path">outlook → excel → winword</span><span class="why">Pulls the overnight bank file, reformats it, writes the summary and mails it.</span><span class="sig">b340de4820</span></td><td class="people"><b>2</b> people<br>dee@northwind.co, p.novak@northwind.co</td><td class="num">29</td><td class="num">4m 54s</td><td class="num">2.4</td><td><span class="chip full">auto 84</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">excel → chrome → excel</span><span class="path">excel → chrome</span><span class="why">9 concrete actions, partly web, seen 8×</span><span class="sig">4aeb8133aa</span></td><td class="people"><b>1</b> person<br>dee@northwind.co</td><td class="num">16</td><td class="num">23m 22s</td><td class="num">6.2</td><td><span class="chip full">auto 83</span></td></tr><tr><td class="flow"><span class="strong">Post the weekly journal</span><span class="path">outlook → excel → sap</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">c349259901</span></td><td class="people"><b>1</b> person<br>p.novak@northwind.co</td><td class="num">9</td><td class="num">24m 52s</td><td class="num">3.7</td><td><span class="chip full">auto 82</span><span class="src">AI</span></td></tr><tr class="hot"><td class="flow"><span class="strong">Rate lookup and paste</span><span class="path">chrome → notepad → excel</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">4c29ee0ef2</span></td><td class="people"><b>2</b> people<br>dee@northwind.co, p.novak@northwind.co</td><td class="num">34</td><td class="num">4m 38s</td><td class="num">2.6</td><td><span class="chip full">auto 80</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">Board chart refresh</span><span class="path">excel → powerpoint</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">fd5ab97df9</span></td><td class="people"><b>1</b> person<br>dee@northwind.co</td><td class="num">16</td><td class="num">16m 41s</td><td class="num">4.4</td><td><span class="chip full">auto 77</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">chrome → excel → outlook</span><span class="path">chrome → excel → outlook</span><span class="why">9 concrete actions, partly web, seen 13×</span><span class="sig">7cfc5887d8</span></td><td class="people"><b>1</b> person<br>dee@northwind.co</td><td class="num">26</td><td class="num">17m 58s</td><td class="num">7.8</td><td><span class="chip part">assist 68</span></td></tr></tbody></table></div></div><div><p class="sub">Time by app</p><div class="bars"><div class="row"><div class="lbl">excel</div><div class="val">19.4 h</div><div class="track"><div class="fill" style="width:100.0%"></div></div></div><div class="row"><div class="lbl">chrome</div><div class="val">13.0 h</div><div class="track"><div class="fill" style="width:66.9%"></div></div></div><div class="row"><div class="lbl">outlook</div><div class="val">6.7 h</div><div class="track"><div class="fill" style="width:34.5%"></div></div></div><div class="row"><div class="lbl">acrobat</div><div class="val">5.2 h</div><div class="track"><div class="fill" style="width:26.9%"></div></div></div><div class="row"><div class="lbl">winword</div><div class="val">4.5 h</div><div class="track"><div class="fill" style="width:23.2%"></div></div></div><div class="row"><div class="lbl">notepad</div><div class="val">2.7 h</div><div class="track"><div class="fill" style="width:13.8%"></div></div></div><div class="row"><div class="lbl">sap</div><div class="val">2.6 h</div><div class="track"><div class="fill" style="width:13.3%"></div></div></div></div></div></div></div>
+<div class="co"><div class="co-head"><h3>Beacon Legal LLP</h3><span class="meta">2026-08-25 → 2026-09-01 · 5 people · 51 h active · 20 flows · 5 shared</span></div><p class="sub">People</p><div class="tablewrap"><table><thead><tr><th>Person</th><th class="num">Actions</th><th class="num">Sequences</th><th class="num">Active h</th><th class="num">Apps</th><th class="num">Flows</th><th>Top flow</th><th>Last export</th></tr></thead><tbody><tr><td class="strong">t.osei@beaconlegal.com</td><td class="num">2,382</td><td class="num">115</td><td class="num">16.5</td><td class="num">9</td><td class="num">8</td><td>Prep daily insurance report <span class="chip full">auto 84</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">m.rossi@beaconlegal.com</td><td class="num">1,893</td><td class="num">37</td><td class="num">13.8</td><td class="num">7</td><td class="num">7</td><td>Re-key portal claims into the tracker <span class="chip full">auto 91</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">a.whitfield@beaconlegal.com</td><td class="num">1,929</td><td class="num">108</td><td class="num">10.7</td><td class="num">9</td><td class="num">7</td><td>Re-key portal claims into the tracker <span class="chip full">auto 91</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">claire.d@beaconlegal.com</td><td class="num">1,119</td><td class="num">110</td><td class="num">9.8</td><td class="num">8</td><td class="num">5</td><td>Re-key portal claims into the tracker <span class="chip full">auto 91</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">s.iqbal@beaconlegal.com</td><td class="num">412</td><td class="num">3</td><td class="num">0.7</td><td class="num">3</td><td class="num">0</td><td><span class="chip none">none yet</span></td><td class="mono">2026-09-01</td></tr></tbody></table></div><div class="grid2" style="margin-top:6px"><div><p class="sub">Flows worth attacking</p><div class="tablewrap"><table><thead><tr><th>Flow</th><th>Seen by</th><th class="num">Runs</th><th class="num">Avg run</th><th class="num">Est. h</th><th>Automatability</th></tr></thead><tbody><tr class="hot"><td class="flow"><span class="strong">Re-key portal claims into the tracker</span><span class="path">chrome → excel</span><span class="why">Copies each open claim from the web portal into the shared tracker workbook.</span><span class="sig">84aca8fc0f</span></td><td class="people"><b>3</b> people<br>a.whitfield@beaconlegal.com, claire.d@beaconlegal.com, m.rossi@beaconlegal.com</td><td class="num">24</td><td class="num">12m 23s</td><td class="num">5.0</td><td><span class="chip full">auto 91</span><span class="src">AI</span></td></tr><tr class="hot"><td class="flow"><span class="strong">Prep daily insurance report</span><span class="path">outlook → excel → winword</span><span class="why">Pulls the overnight bank file, reformats it, writes the summary and mails it.</span><span class="sig">b340de4820</span></td><td class="people"><b>2</b> people<br>m.rossi@beaconlegal.com, t.osei@beaconlegal.com</td><td class="num">12</td><td class="num">7m 02s</td><td class="num">1.4</td><td><span class="chip full">auto 84</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">excel → chrome → excel</span><span class="path">excel → chrome</span><span class="why">9 concrete actions, partly web, seen 2×</span><span class="sig">984c8cd0ea</span></td><td class="people"><b>1</b> person<br>t.osei@beaconlegal.com</td><td class="num">2</td><td class="num">23m 31s</td><td class="num">0.8</td><td><span class="chip full">auto 83</span></td></tr><tr><td class="flow"><span class="strong">excel → powerpoint</span><span class="path">excel → powerpoint</span><span class="why">6 concrete actions, partly web, seen 6×</span><span class="sig">9f1c4c5a21</span></td><td class="people"><b>1</b> person<br>a.whitfield@beaconlegal.com</td><td class="num">6</td><td class="num">5m 18s</td><td class="num">0.5</td><td><span class="chip full">auto 83</span></td></tr><tr class="hot"><td class="flow"><span class="strong">Reconcile two workbooks</span><span class="path">excel</span><span class="why">6 concrete actions, partly web, seen 11×</span><span class="sig">8a34039ada</span></td><td class="people"><b>2</b> people<br>a.whitfield@beaconlegal.com, t.osei@beaconlegal.com</td><td class="num">15</td><td class="num">19m 09s</td><td class="num">4.8</td><td><span class="chip full">auto 77</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">sap → chrome → excel → outlook</span><span class="path">sap → chrome → excel → outlook</span><span class="why">12 concrete actions, partly web, seen 14×</span><span class="sig">c4cb0ad69a</span></td><td class="people"><b>1</b> person<br>t.osei@beaconlegal.com</td><td class="num">14</td><td class="num">7m 43s</td><td class="num">1.8</td><td><span class="chip full">auto 75</span></td></tr><tr><td class="flow"><span class="strong">outlook → excel → sap</span><span class="path">outlook → excel → sap</span><span class="why">9 concrete actions, partly web, seen 2×</span><span class="sig">521f5efe87</span></td><td class="people"><b>1</b> person<br>t.osei@beaconlegal.com</td><td class="num">2</td><td class="num">14m 00s</td><td class="num">0.5</td><td><span class="chip part">assist 73</span></td></tr><tr class="hot"><td class="flow"><span class="strong">Assemble the month-end pack</span><span class="path">excel → acrobat → winword</span><span class="why">Merges the ledger extract with the signed PDFs into a Word pack.</span><span class="sig">3a64728f27</span></td><td class="people"><b>3</b> people<br>claire.d@beaconlegal.com, m.rossi@beaconlegal.com, t.osei@beaconlegal.com</td><td class="num">31</td><td class="num">9m 40s</td><td class="num">5.0</td><td><span class="chip part">assist 63</span><span class="src">AI</span></td></tr></tbody></table></div></div><div><p class="sub">Time by app</p><div class="bars"><div class="row"><div class="lbl">excel</div><div class="val">17.1 h</div><div class="track"><div class="fill" style="width:100.0%"></div></div></div><div class="row"><div class="lbl">chrome</div><div class="val">9.4 h</div><div class="track"><div class="fill" style="width:54.7%"></div></div></div><div class="row"><div class="lbl">winword</div><div class="val">8.5 h</div><div class="track"><div class="fill" style="width:49.7%"></div></div></div><div class="row"><div class="lbl">acrobat</div><div class="val">3.6 h</div><div class="track"><div class="fill" style="width:21.1%"></div></div></div><div class="row"><div class="lbl">outlook</div><div class="val">3.6 h</div><div class="track"><div class="fill" style="width:20.8%"></div></div></div><div class="row"><div class="lbl">sap</div><div class="val">2.9 h</div><div class="track"><div class="fill" style="width:16.9%"></div></div></div><div class="row"><div class="lbl">explorer</div><div class="val">2.3 h</div><div class="track"><div class="fill" style="width:13.5%"></div></div></div></div></div></div></div>
+<div class="co"><div class="co-head"><h3>Acme Insurance</h3><span class="meta">2026-08-25 → 2026-09-01 · 4 people · 49 h active · 18 flows · 5 shared</span></div><p class="sub">People</p><div class="tablewrap"><table><thead><tr><th>Person</th><th class="num">Actions</th><th class="num">Sequences</th><th class="num">Active h</th><th class="num">Apps</th><th class="num">Flows</th><th>Top flow</th><th>Last export</th></tr></thead><tbody><tr><td class="strong">jane@acme.com</td><td class="num">1,831</td><td class="num">105</td><td class="num">12.9</td><td class="num">8</td><td class="num">8</td><td>Re-key portal claims into the tracker <span class="chip full">auto 91</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">raj@acme.com</td><td class="num">1,394</td><td class="num">33</td><td class="num">12.7</td><td class="num">8</td><td class="num">5</td><td>outlook → excel → sap <span class="chip full">auto 85</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">l.ortiz@acme.com</td><td class="num">1,654</td><td class="num">130</td><td class="num">12.4</td><td class="num">8</td><td class="num">6</td><td>Prep daily insurance report <span class="chip full">auto 84</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr><tr><td class="strong">sam.chen@acme.com</td><td class="num">1,882</td><td class="num">104</td><td class="num">11.6</td><td class="num">8</td><td class="num">7</td><td>Re-key portal claims into the tracker <span class="chip full">auto 91</span><span class="src">AI</span></td><td class="mono">2026-09-01</td></tr></tbody></table></div><div class="grid2" style="margin-top:6px"><div><p class="sub">Flows worth attacking</p><div class="tablewrap"><table><thead><tr><th>Flow</th><th>Seen by</th><th class="num">Runs</th><th class="num">Avg run</th><th class="num">Est. h</th><th>Automatability</th></tr></thead><tbody><tr class="hot"><td class="flow"><span class="strong">Re-key portal claims into the tracker</span><span class="path">chrome → excel</span><span class="why">Copies each open claim from the web portal into the shared tracker workbook.</span><span class="sig">84aca8fc0f</span></td><td class="people"><b>3</b> people<br>jane@acme.com, raj@acme.com, sam.chen@acme.com</td><td class="num">25</td><td class="num">9m 30s</td><td class="num">4.0</td><td><span class="chip full">auto 91</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">excel → chrome → excel</span><span class="path">excel → chrome</span><span class="why">9 concrete actions, partly web, seen 10×</span><span class="sig">ebee7c1892</span></td><td class="people"><b>1</b> person<br>sam.chen@acme.com</td><td class="num">10</td><td class="num">8m 44s</td><td class="num">1.5</td><td><span class="chip full">auto 90</span></td></tr><tr class="hot"><td class="flow"><span class="strong">Board chart refresh</span><span class="path">excel → powerpoint</span><span class="why">6 concrete actions, partly web, seen 4×</span><span class="sig">bdedd5dc71</span></td><td class="people"><b>2</b> people<br>jane@acme.com, raj@acme.com</td><td class="num">7</td><td class="num">16m 19s</td><td class="num">1.9</td><td><span class="chip full">auto 86</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">outlook → excel → sap</span><span class="path">outlook → excel → sap</span><span class="why">9 concrete actions, partly web, seen 10×</span><span class="sig">b9380f32bc</span></td><td class="people"><b>1</b> person<br>raj@acme.com</td><td class="num">10</td><td class="num">19m 48s</td><td class="num">3.3</td><td><span class="chip full">auto 85</span></td></tr><tr><td class="flow"><span class="strong">outlook → excel → sap</span><span class="path">outlook → excel → sap</span><span class="why">9 concrete actions, partly web, seen 2×</span><span class="sig">c1923599d4</span></td><td class="people"><b>1</b> person<br>sam.chen@acme.com</td><td class="num">2</td><td class="num">3m 10s</td><td class="num">0.1</td><td><span class="chip full">auto 85</span></td></tr><tr class="hot"><td class="flow"><span class="strong">Prep daily insurance report</span><span class="path">outlook → excel → winword</span><span class="why">Pulls the overnight bank file, reformats it, writes the summary and mails it.</span><span class="sig">b340de4820</span></td><td class="people"><b>3</b> people<br>l.ortiz@acme.com, raj@acme.com, sam.chen@acme.com</td><td class="num">19</td><td class="num">9m 46s</td><td class="num">3.1</td><td><span class="chip full">auto 84</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">Post the weekly journal</span><span class="path">outlook → excel → sap</span><span class="why">Same steps every run; inputs come from a stable source.</span><span class="sig">a545cf4bd6</span></td><td class="people"><b>1</b> person<br>l.ortiz@acme.com</td><td class="num">14</td><td class="num">22m 31s</td><td class="num">5.3</td><td><span class="chip full">auto 82</span><span class="src">AI</span></td></tr><tr><td class="flow"><span class="strong">sap → chrome → excel → outlook</span><span class="path">sap → chrome → excel → outlook</span><span class="why">12 concrete actions, partly web, seen 2×</span><span class="sig">ddec52ccd7</span></td><td class="people"><b>1</b> person<br>raj@acme.com</td><td class="num">2</td><td class="num">19m 19s</td><td class="num">0.6</td><td><span class="chip full">auto 81</span></td></tr></tbody></table></div></div><div><p class="sub">Time by app</p><div class="bars"><div class="row"><div class="lbl">excel</div><div class="val">17.6 h</div><div class="track"><div class="fill" style="width:100.0%"></div></div></div><div class="row"><div class="lbl">outlook</div><div class="val">11.1 h</div><div class="track"><div class="fill" style="width:62.9%"></div></div></div><div class="row"><div class="lbl">chrome</div><div class="val">8.1 h</div><div class="track"><div class="fill" style="width:46.1%"></div></div></div><div class="row"><div class="lbl">winword</div><div class="val">3.7 h</div><div class="track"><div class="fill" style="width:20.8%"></div></div></div><div class="row"><div class="lbl">teams</div><div class="val">2.9 h</div><div class="track"><div class="fill" style="width:16.4%"></div></div></div><div class="row"><div class="lbl">sap</div><div class="val">2.1 h</div><div class="track"><div class="fill" style="width:11.9%"></div></div></div><div class="row"><div class="lbl">powerpoint</div><div class="val">1.5 h</div><div class="track"><div class="fill" style="width:8.5%"></div></div></div></div></div></div></div>
+</section>
+<section>
+<div class="sec-head"><span class="eyebrow">Provenance</span><h2>What was ingested</h2><p>Every file the aggregator touched, and what it decided to do with it.</p></div>
+<div class="stats">
+<div class="stat"><div class="k">JSON files seen</div><div class="v">20</div></div>
+<div class="stat"><div class="k">Accepted</div><div class="v">14</div></div>
+<div class="stat"><div class="k">Superseded re-sends</div><div class="v">2</div></div>
+<div class="stat"><div class="k">Skipped</div><div class="v">4</div></div>
+</div>
+<div class="callout warn"><h3>Skipped files</h3><p>These were not readable as workflow-mapper-export/1 exports. Nothing from them is counted.</p><ul><li><span class="mono">broken-truncated.json</span> — invalid JSON (Expecting value)</li><li><span class="mono">no-employee.json</span> — missing company or employee</li><li><span class="mono">not-an-object.json</span> — top level is list, expected object</li><li><span class="mono">wrong-schema.json</span> — schema &#x27;workflow-mapper-export/2&#x27;, expected &#x27;workflow-mapper-export/1&#x27;</li></ul></div>
+</section>
+<div class="footer">workflow-mapper · aggregate.py · generated 2026-09-01 16:01 · source folder <span class="mono">exports/</span><br>
+      LAYOUT SAMPLE &mdash; every company, person, flow and figure on this page is synthetic test data generated to review the report layout. No real capture data appears here.<br>Estimated hours are count × avg_seconds per flow, summed. Automatability is the reviewed score when a flow has been reviewed, otherwise the deterministic score. Deduplication key: company + employee + install_id, newest export wins.</div>
+</div>

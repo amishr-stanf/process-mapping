@@ -11,6 +11,11 @@ config.json
 # Captured screenshots (personal) — never commit
 shots/
 
+# Install identity and generated exports (personal) — never commit
+install.json
+workflow-export_*.json
+report.html
+
 # Python
 __pycache__/
 *.py[cod]

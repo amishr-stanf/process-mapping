@@ -29,6 +29,8 @@ from urllib.parse import urlsplit
 import ai
 import auth
 import config
+import export as export_mod
+import identity
 import logger
 import mining
 
@@ -214,6 +216,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(data)
         if self.path.split("?")[0] == "/api/log":
             return self._json(mining.recent_log(DB, limit=40))
+        if self.path == "/api/identity":
+            return self._json(identity.public())
+        if self.path == "/api/export/preview":
+            return self._json(export_mod.preview(DB))
         if self.path == "/admin" or self.path.startswith("/admin?"):
             try:
                 with open(os.path.join(BUNDLE, "ui", "admin.html"), "r", encoding="utf-8") as f:
@@ -264,6 +270,20 @@ class Handler(BaseHTTPRequestHandler):
             if "screenshots" in body:
                 config.set_screenshots(body.get("screenshots"))
             return self._json(config.public_status())
+        if self.path == "/api/identity":
+            b = self._read_json() or {}
+            return self._json(identity.update(employee=b.get("employee"),
+                                              company=b.get("company")) and identity.public())
+        if self.path == "/api/export":
+            # Explicit, user-initiated. Nothing is uploaded anywhere; this only
+            # writes a file the person chooses to send on.
+            b = self._read_json() or {}
+            try:
+                path = export_mod.write(DB, days=int(b.get("days") or 7))
+                return self._json({"ok": True, "path": path,
+                                   "folder": os.path.dirname(path)})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
         if self.path == "/api/ai/review":
             # Explicit, user-initiated AI pass over already-detected flows.
             body = self._read_json() or {}

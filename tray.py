@@ -32,10 +32,34 @@ def _make_image():
     return img
 
 
+def already_running():
+    """True if another copy of the app is already serving on this port.
+
+    People re-download and re-open the zip repeatedly; a second launch should
+    just show the dashboard of the copy that's already collecting, not fail on a
+    port clash or start a rival capture loop against the same database.
+    """
+    import urllib.request
+    try:
+        with urllib.request.urlopen(URL + "/api/status", timeout=1.5) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
 def run():
+    if already_running():
+        webbrowser.open(URL)     # hand over to the instance that's already up
+        return
+
     server = appmod.build_server(PORT)
     threading.Thread(target=server.serve_forever, name="server", daemon=True).start()
     appmod.capture.start()   # auto-start capturing on launch (Stop from the tray/dashboard)
+    try:
+        import identity
+        identity.record_open()   # continuity marker across re-downloads
+    except Exception:
+        pass
     webbrowser.open(URL)
 
     if not HAVE_TRAY:
