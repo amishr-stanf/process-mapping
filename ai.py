@@ -19,9 +19,17 @@ import config
 
 
 def available():
-    """True if the user has configured a provider + key."""
+    """True if a provider + key are configured (regardless of the on/off switch)."""
     ai = config.load()["ai"]
     return bool(ai.get("provider")) and bool(config.resolve_key(ai.get("provider")))
+
+
+def enabled():
+    """True only if the user has BOTH switched AI on and supplied a key.
+
+    Every AI call site checks this. With it off the tool is fully deterministic.
+    """
+    return bool(config.load()["ai"].get("enabled")) and available()
 
 
 def generate(prompt, max_tokens=512, timeout=30):

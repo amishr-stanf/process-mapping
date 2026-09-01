@@ -111,6 +111,8 @@
   #realFlows .rf-flow .nm { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
   #realFlows .rf-flow .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
   #realFlows .rf-chain { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 8px; overflow-wrap: anywhere; }
+  #realFlows .rf-purpose { font-size: 12.5px; color: var(--text); margin-top: 8px; line-height: 1.45; }
+  #realFlows .rf-why { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 5px; }
   .edge-hit { stroke: transparent; fill: none; cursor: pointer; }
   .edge-vis { fill: none; stroke-linecap: round; transition: stroke-opacity .16s, stroke-width .16s; pointer-events: none; }
   .node-g { cursor: pointer; }
@@ -194,6 +196,20 @@
 
   /* Bottom drawer */
   .drawer { grid-area: drawer; border-top: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
+  .dsplit { display: grid; grid-template-columns: 1fr 340px; height: 100%; min-height: 0; }
+  .dmain { display: flex; flex-direction: column; min-width: 0; }
+  .dlog { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel-2); }
+  .logrows { overflow-y: auto; padding: 0 14px 12px; font-family: var(--mono); font-size: 10.5px; }
+  .logrows::-webkit-scrollbar { width: 8px; }
+  .logrows::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; }
+  .lrow { display: grid; grid-template-columns: 46px 52px 1fr auto; gap: 7px; align-items: baseline;
+    padding: 3px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent); }
+  .lrow .lt { color: var(--faint); }
+  .lrow .lv { color: var(--accent); }
+  .lrow .lo { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lrow .ls { color: var(--faint); font-size: 9.5px; }
+  .lrow.bound { grid-template-columns: 1fr; color: var(--faint); text-align: center; padding: 5px 0; }
+  .lrow.bound .lo { color: var(--faint); text-align: center; }
   .drawer .head { display: flex; align-items: center; gap: 12px; padding: 13px 22px 8px; }
   .drawer .head h3 { margin: 0; font-size: 13px; font-family: var(--mono); font-weight: 600; letter-spacing: .02em; }
   .drawer .head .c { color: var(--faint); font-family: var(--mono); font-size: 12px; }
@@ -328,9 +344,17 @@
   </aside>
 
   <section class="drawer">
-    <div class="head"><h3>Captured workflows</h3><span class="c" id="wfCount"></span>
-      <span style="flex:1"></span><span class="eyebrow">click to trace on map →</span></div>
-    <div class="track" id="track"></div>
+    <div class="dsplit">
+      <div class="dmain">
+        <div class="head"><h3>Automatable workflows</h3><span class="c" id="wfCount"></span>
+          <span style="flex:1"></span><span class="eyebrow">click to trace on map →</span></div>
+        <div class="track" id="track"></div>
+      </div>
+      <div class="dlog">
+        <div class="head"><h3>Action log</h3><span class="c" id="logMeta"></span></div>
+        <div class="logrows" id="logRows"></div>
+      </div>
+    </div>
   </section>
 </div>
 
@@ -339,6 +363,14 @@
     <h2>Settings</h2>
     <div class="lead">Capture, the graph, and reports work fully with no account and no cost. AI features (flow suggestions &amp; automation) are optional — and when you use them they run on <b>your own</b> API key.</div>
     <div class="byok"><b>Bring your own key.</b> Your key is stored only on this computer and used only to call the provider you pick. It is never sent anywhere else — whoever shared this tool never sees your data and never pays for your usage.</div>
+    <div class="field">
+      <label>AI layer</label>
+      <label style="display:flex;align-items:center;gap:9px;font-family:var(--sans);text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);cursor:pointer">
+        <input id="setAiOn" type="checkbox" style="width:auto" />
+        Use AI to interpret and rank detected flows
+      </label>
+      <div class="hint">Off = fully deterministic: capture, sequencing, flows and scores all still work. On = a small model adds context and a sharper automatability ranking, on demand.</div>
+    </div>
     <div class="field">
       <label>Provider</label>
       <select id="setProvider">
@@ -367,6 +399,7 @@
     </div>
     <div class="actions">
       <button class="btn primary" id="setSave" type="button">Save</button>
+      <button class="btn ghost" id="setReview" type="button">Analyze flows</button>
       <button class="btn ghost" id="setTest" type="button">Test key</button>
       <button class="btn ghost" id="setClose" type="button">Close</button>
       <span class="status" id="setStatus"></span>
@@ -426,16 +459,18 @@
     (fd.flows || []).forEach(f => {
       const apps = [...new Set(f.steps.map(s => s.app))];
       apps.forEach(a => { if (!APPS[a]) APPS[a] = { name: prettyApp(a), kind: appKind(a) }; });
-      let auto = (f.review && f.review.automatability) || (f.count >= 3 ? "auto" : "assist");
+      const score = (f.review && f.review.score != null) ? f.review.score : (f.det_score || 0);
+      let auto = (f.review && f.review.automatability) || (score >= 70 ? "auto" : score >= 45 ? "assist" : "skip");
       if (!["auto","assist","skip"].includes(auto)) auto = "assist";
       WF.push({
         id: "f" + f.id,
         name: (f.review && f.review.name) ? f.review.name : f.name,
         auto,
+        score,
         perWeek: f.count,
         minEach: Math.max(0.1, (f.avg_seconds || 0) / 60),
-        freq: "×" + f.count + " seen",
-        trigger: (f.review && f.review.reason) ? f.review.reason : ("observed " + f.count + "×"),
+        freq: f.count > 1 ? ("seen " + f.count + "×") : "seen once",
+        trigger: (f.review && f.review.reason) ? f.review.reason : (f.det_reason || ("observed " + f.count + "×")),
         intra: apps.length === 1,
         app0: f.steps[0].app,
         steps: f.steps.map(s => ({ app: s.app, action: (VERB_LABEL[s.verb] || s.verb) + " " + s.obj, via: VERB_VIA[s.verb] || "open" })),
@@ -507,9 +542,11 @@
   try {
     const fd = await fetch("/api/flows").then(r => r.ok ? r.json() : null);
     if (fd) {
-      const repeated = (fd.flows || []).filter(f => f.count >= 2);
-      if (repeated.length) {
-        const t = transformFlows({ flows: repeated });
+      // The server already surfaced these by automatability — repetition is a
+      // signal, not a gate — so the map shows exactly what the panel ranks.
+      const surfaced = fd.flows || [];
+      if (surfaced.length) {
+        const t = transformFlows({ flows: surfaced });
         APPS = t.APPS; WORKFLOWS = t.WORKFLOWS; DATA_MODE = "live";
       } else {
         APPS = {}; WORKFLOWS = []; DATA_MODE = "empty";   // clean slate
@@ -897,38 +934,70 @@
 
   function renderFlows(data){
     const box = document.getElementById("realFlows");
-    const all = (data && data.flows) || [];
-    const flows = all.filter(f => f.count >= 2);   // only genuine repeats are findings
+    // Server already surfaced these by automatability (repetition is one
+    // signal, not the gate) — a one-off but highly scriptable flow appears too.
+    const flows = (data && data.flows) || [];
     if(!flows.length){
-      box.innerHTML = `<div class="eyebrow" style="margin:2px 0 8px">Your detected flows</div>
-        <div class="rf-empty">Still learning. Keep working normally — a task has to repeat before it shows up here.
-        <br><span style="font-family:var(--mono);font-size:11px;color:var(--faint)">${data?data.event_count:0} events · ${data?data.segment_count:0} sessions · ${all.length} candidate${all.length===1?"":"s"} seen once</span></div>`;
+      box.innerHTML = `<div class="eyebrow" style="margin:2px 0 8px">Automatable flows</div>
+        <div class="rf-empty">Tracking every action. A sequence appears here once it looks automatable — either because it repeats, or because it's a concrete, scriptable set of steps.
+        <br><span style="font-family:var(--mono);font-size:11px;color:var(--faint)">${data?data.event_count:0} actions · ${data?data.segment_count:0} sequences · ${data?data.candidate_count:0} candidate${(data&&data.candidate_count===1)?"":"s"}</span></div>`;
       return;
     }
     const badge = document.getElementById("sampleBadge"); if(badge) badge.style.display = "none";
-    box.innerHTML = `<div class="eyebrow" style="margin:2px 0 8px">Your detected flows · live</div>` +
+    const aiOn = data.ai_enabled;
+    box.innerHTML = `<div class="eyebrow" style="margin:2px 0 8px">Automatable flows · ranked${aiOn ? " · AI on" : ""}</div>` +
       flows.map(f => {
         const apps = [...new Set(f.steps.map(s => s.app))];
-        const label = (f.review && f.review.name) ? f.review.name : f.name;
+        const r = f.review || {};
+        const label = r.name || f.name;
+        const score = (r.score != null) ? r.score : f.det_score;
+        const why = r.reason || f.det_reason;
+        const col = score >= 70 ? "var(--auto)" : score >= 45 ? "var(--assist)" : "var(--skip)";
         return `<div class="rf-flow"><div class="r1">
-            <span class="rk">${f.count >= 2 ? ("×" + f.count) : "×1"}</span>
-            <div><div class="nm">${esc(label)}</div><div class="sub">${f.steps.length} steps · ${Math.round(f.total_seconds)}s total</div></div>
-            ${f.review && f.review.automatability ? pill(f.review.automatability) : ""}
-          </div><div class="rf-chain">${apps.map(a => esc(a)).join(" → ")}</div></div>`;
+            <span class="rk" style="color:${col};border-color:${col}">${score}</span>
+            <div><div class="nm">${esc(label)}</div>
+              <div class="sub">${f.count>1?("seen "+f.count+"× · "):""}${f.steps.length} steps · ${Math.round(f.total_seconds)}s</div></div>
+            ${r.automatability ? pill(r.automatability) : ""}
+          </div>
+          ${r.purpose ? `<div class="rf-purpose">${esc(r.purpose)}</div>` : ""}
+          <div class="rf-chain">${apps.map(a => esc(a)).join(" → ")}</div>
+          <div class="rf-why">${esc(why||"")}</div></div>`;
       }).join("");
   }
   async function refreshFlows(){ if(!LIVE) return; try { renderFlows(await api("/api/flows")); } catch(e){} }
+
+  // Live action log — shows every tracked action and the sequence it is being
+  // committed to, so it's visible that capture is continuous, not just repeats.
+  function renderLog(d){
+    const meta = document.getElementById("logMeta");
+    const box = document.getElementById("logRows");
+    if(!meta || !box) return;
+    meta.textContent = `${d.total_actions} actions · ${d.sequences} sequences`;
+    if(!d.rows.length){ box.innerHTML = `<div style="color:var(--faint);padding:10px 0">waiting for activity…</div>`; return; }
+    box.innerHTML = d.rows.map(r => {
+      if(r.verb === "idle") return `<div class="lrow bound"><span class="lo">${esc(r.obj)}</span></div>`;
+      const t = new Date(r.ts*1000).toLocaleTimeString([], {hour12:false});
+      const seq = r.seq ? `seq ${r.seq}${r.score!=null?" · "+r.score:""}` : "—";
+      return `<div class="lrow" title="${esc(r.name||"")}">
+        <span class="lt">${t.slice(0,8)}</span>
+        <span class="lv">${esc(r.verb)}</span>
+        <span class="lo">${esc(r.app||"")} ${esc(r.obj||"")}</span>
+        <span class="ls">${seq}</span></div>`;
+    }).join("");
+  }
+  async function refreshLog(){ if(!LIVE) return; try { renderLog(await api("/api/log")); } catch(e){} }
 
   async function connect(){
     try {
       const s = await api("/api/status");
       LIVE = true;
       applyStatus(s);
-      refreshFlows();
+      refreshFlows(); refreshLog();
       if(pollTimer) clearInterval(pollTimer);
       let tick = 0;
       pollTimer = setInterval(async () => {
         try { applyStatus(await api("/api/status")); } catch(e){}
+        refreshLog();                          // action log every 2s
         if(++tick % 3 === 0) refreshFlows();   // detected flows every ~6s
       }, 2000);
     } catch(e) {
@@ -959,6 +1028,7 @@
       const c = await api("/api/config");
       provEl.value = c.provider || ""; modelEl.value = c.model || ""; keyEl.value = ""; showKeyState(c);
       const shots = document.getElementById("setShots"); if (shots) shots.checked = !!c.screenshots;
+      const aion = document.getElementById("setAiOn"); if (aion) aion.checked = !!c.ai_requested;
     } catch (e) { hintEl.textContent = "start the app (python app.py) to save settings"; }
   }
   function closeSettings() { modal.classList.remove("open"); }
@@ -973,6 +1043,7 @@
       const body = { provider: provEl.value || null, model: modelEl.value };
       if (keyEl.value) body.api_key = keyEl.value;
       const shots = document.getElementById("setShots"); if (shots) body.screenshots = shots.checked;
+      const aion = document.getElementById("setAiOn"); if (aion) body.enabled = aion.checked;
       const c = await apiPost("/api/config", body);
       keyEl.value = ""; showKeyState(c); statusEl.textContent = "Saved.";
     } catch (e) { statusEl.textContent = "Save failed — is the app running?"; }
@@ -983,6 +1054,15 @@
       const r = await apiPost("/api/ai/test", {});
       statusEl.textContent = r.ok ? `✓ works — replied “${r.reply}”` : `✗ ${r.error}`;
     } catch (e) { statusEl.textContent = "Test failed — is the app running?"; }
+  });
+
+  document.getElementById("setReview").addEventListener("click", async () => {
+    statusEl.textContent = "Analyzing… (uses your key)";
+    try {
+      const r = await apiPost("/api/ai/review", {});
+      statusEl.textContent = r.reviewed ? `✓ analyzed ${r.annotated ?? 0} flow(s)` : `✗ ${r.reason}`;
+      refreshFlows();
+    } catch (e) { statusEl.textContent = "Analysis failed — is the app running?"; }
   });
 
   document.getElementById("quitBtn").addEventListener("click", async () => {

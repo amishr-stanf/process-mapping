@@ -84,13 +84,52 @@ exposed to your network), opens the UI in your browser, and gives you a
 **Start mapping** button that turns capture on/off and shows live stats from
 your own `activity.db`. All data stays on your laptop.
 
+## How flow detection works
+
+Everything below is deterministic — it runs with AI off.
+
+**1. Every action is logged.** Two streams merge into one timeline
+(`load_actions`): desktop `focus` / `copy` / idle, and web `visit` / `click` /
+`input` / `read`. The dashboard's **Action log** shows this stream live, with the
+sequence each action is being committed to.
+
+**2. Actions are cut into sequences.** A sequence ends at an idle event (60s of
+no input) or a gap > 45s between actions. This is the weakest step — a long
+think-pause splits a task, and back-to-back tasks can merge. The AI layer exists
+partly to catch exactly those mistakes.
+
+**3. Steps are normalized so repeats collapse.** Numbers, ids, emails and dates
+become `<n>`, `<id>`, `<email>`, `<date>`, so the same task with different data
+produces the same signature.
+
+**4. Information carried without the clipboard is linked.** If text you *read*
+in one app reappears in something you *type* in another within 5 minutes
+(verbatim or ≥60% token overlap), a synthetic `carry` step records the hand-off.
+This catches "look it up here, retype it there", which leaves no clipboard trace.
+
+**5. Sequences are scored for automatability** (`auto_score`) — not just
+repetition. Concrete actions (click/input/copy/carry) score highest, reachable
+interfaces (web/API) beat native GUIs, and repetition *boosts* the score rather
+than gating it. A flow surfaces if it repeats **or** scores ≥ 45, so a
+one-off-but-clearly-scriptable sequence still appears.
+
+Known limits: inside native apps we only see the window title, so in-app steps in
+Excel/Word score low until the UI-Automation sensor lands.
+
 ## AI features — bring your own key (BYOK)
 
-Capture, the graph, and the reports are **fully deterministic** — no AI, no
-account, no cost. They work for everyone out of the box.
+Capture, sequencing, flow detection and automatability scores are **fully
+deterministic** — no AI, no account, no cost. There is an explicit **AI on/off**
+switch in Settings, and with it off nothing above changes.
 
-The optional AI layer (flow suggestions and automation synthesis) runs on
-**your own** API key:
+Turned on, a **small model** (Haiku 4.5 / GPT-4o-mini by default) is layered on
+top of the already-detected flows to: name each task, explain what it's actually
+accomplishing, judge whether the segmenter got the boundaries right, and give a
+sharper 0-100 automatability ranking. It runs only when you press **Analyze
+flows**, results are cached per flow signature, and only flows seen 2+ times are
+sent — so it stays cheap. The dashboard itself never calls a model.
+
+It runs on **your own** API key:
 
 - Open **⚙ Settings** in the dashboard, pick a provider (Anthropic or OpenAI),
   paste your key, and **Save** (or **Test key** to verify it).

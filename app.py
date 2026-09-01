@@ -207,11 +207,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/config":
             return self._json(config.public_status())
         if self.path.split("?")[0] == "/api/flows":
-            # Deterministic mining; add ?review=1 for the AI pass (needs a key).
-            review = "review=1" in self.path
-            data = mining.mine(DB, review=review)
+            # Always deterministic. Cached AI annotations are layered on if the
+            # user has run a review; no model is ever called from this path.
+            data = mining.mine(DB)
             data["generated_ts"] = time.time()
             return self._json(data)
+        if self.path.split("?")[0] == "/api/log":
+            return self._json(mining.recent_log(DB, limit=40))
         if self.path == "/admin" or self.path.startswith("/admin?"):
             try:
                 with open(os.path.join(BUNDLE, "ui", "admin.html"), "r", encoding="utf-8") as f:
@@ -257,9 +259,15 @@ class Handler(BaseHTTPRequestHandler):
                 model=body.get("model"),
                 clear_key=bool(body.get("clear_key")),
             )
+            if "enabled" in body:
+                config.update_ai(enabled=body.get("enabled"))
             if "screenshots" in body:
                 config.set_screenshots(body.get("screenshots"))
             return self._json(config.public_status())
+        if self.path == "/api/ai/review":
+            # Explicit, user-initiated AI pass over already-detected flows.
+            body = self._read_json() or {}
+            return self._json(mining.annotate(DB, force=bool(body.get("force"))))
         # ---- admin (developer console) ------------------------------------
         if self.path == "/api/admin/login":
             body = self._read_json() or {}

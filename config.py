@@ -16,9 +16,11 @@ import sys
 
 APP_NAME = "workflow-mapper"
 
+# Small, cheap models by default: the AI layer only annotates already-detected
+# flows, which is a light classification job — not worth a frontier model.
 DEFAULT_MODELS = {
-    "anthropic": "claude-sonnet-5",
-    "openai": "gpt-4o",
+    "anthropic": "claude-haiku-4-5-20251001",
+    "openai": "gpt-4o-mini",
 }
 ENV_KEYS = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -45,7 +47,9 @@ def config_path():
 
 def _defaults():
     return {
-        "ai": {"provider": None, "api_key": "", "model": ""},
+        # enabled: the explicit AI on/off switch. The whole tool runs with this
+        # off — capture, segmentation, flows and the dashboard are deterministic.
+        "ai": {"enabled": False, "provider": None, "api_key": "", "model": ""},
         "capture": {"screenshots": False, "interval": 30, "mode": "focused"},
     }
 
@@ -100,6 +104,8 @@ def public_status():
     key = resolve_key(provider)
     cap = load()["capture"]
     return {
+        "ai_enabled": bool(ai.get("enabled")) and bool(key),
+        "ai_requested": bool(ai.get("enabled")),
         "provider": provider,
         "model": ai.get("model") or default_model(provider),
         "key_set": bool(key),
@@ -109,8 +115,10 @@ def public_status():
     }
 
 
-def update_ai(provider=None, api_key=None, model=None, clear_key=False):
+def update_ai(provider=None, api_key=None, model=None, clear_key=False, enabled=None):
     cfg = load()
+    if enabled is not None:
+        cfg["ai"]["enabled"] = bool(enabled)
     if provider is not None:
         cfg["ai"]["provider"] = provider or None
     if clear_key:

@@ -28,6 +28,7 @@ import time
 from collections import defaultdict
 
 import ai
+import config
 
 # Admin-authored rules that override the automatic clustering.
 RULES_SCHEMA = """
@@ -38,6 +39,47 @@ CREATE TABLE IF NOT EXISTS flow_rules (
     ts     REAL
 );
 """
+
+# Cached AI annotations, keyed by flow signature. Written only when the user
+# runs a review; read on every request so the dashboard never calls a model.
+ANNOT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS flow_annotations (
+    sig     TEXT PRIMARY KEY,
+    name    TEXT,      -- human task name
+    purpose TEXT,      -- what the user is actually accomplishing
+    auto    TEXT,      -- auto | assist | skip
+    score   INTEGER,   -- 0-100 automatability
+    reason  TEXT,
+    slots   TEXT,      -- JSON list of variable slots
+    coherent INTEGER,  -- 1 if the AI thinks this is one real task
+    model   TEXT,
+    ts      REAL
+);
+"""
+
+
+def ensure_annotations(conn):
+    conn.executescript(ANNOT_SCHEMA)
+    conn.commit()
+
+
+def load_annotations(db):
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    try:
+        ensure_annotations(conn)
+        out = {}
+        for r in conn.execute("SELECT * FROM flow_annotations"):
+            d = dict(r)
+            try:
+                d["slots"] = json.loads(d.get("slots") or "[]")
+            except ValueError:
+                d["slots"] = []
+            d["coherent"] = bool(d.get("coherent"))
+            out[d["sig"]] = d
+        return out
+    finally:
+        conn.close()
 
 
 def ensure_rules(conn):
@@ -127,16 +169,16 @@ def load_actions(db):
     conn.row_factory = sqlite3.Row
     actions = []
     try:
-        for r in conn.execute("SELECT ts, kind, app, title, clip_type FROM events ORDER BY ts"):
+        for r in conn.execute("SELECT ts, kind, app, title, clip_type, clip_preview FROM events ORDER BY ts"):
             k = r["kind"]
             if k == "idle_start":
                 actions.append({"ts": r["ts"], "verb": "_idle"})
             elif k == "focus":
                 actions.append({"ts": r["ts"], "app": _app_name(r["app"]), "verb": "focus",
-                                "obj": normalize(r["title"])})
+                                "obj": normalize(r["title"]), "_text": r["title"]})
             elif k == "clipboard":
                 actions.append({"ts": r["ts"], "app": _app_name(r["app"]), "verb": "copy",
-                                "obj": "clip:" + (r["clip_type"] or "?")})
+                                "obj": "clip:" + (r["clip_type"] or "?"), "_text": r["clip_preview"]})
         try:
             web = conn.execute("SELECT ts, kind, origin, path, title, target, text_preview "
                                "FROM web_events ORDER BY ts").fetchall()
@@ -151,12 +193,68 @@ def load_actions(db):
                 actions.append({"ts": r["ts"], "app": dom, "verb": "click",
                                 "obj": _click_label(r["target"], r["text_preview"])})
             elif k == "input":
-                actions.append({"ts": r["ts"], "app": dom, "verb": "input", "obj": "field:" + _field_name(r["target"])})
+                actions.append({"ts": r["ts"], "app": dom, "verb": "input",
+                                "obj": "field:" + _field_name(r["target"]), "_text": r["text_preview"]})
             elif k == "select":
-                actions.append({"ts": r["ts"], "app": dom, "verb": "read", "obj": "selection"})
+                actions.append({"ts": r["ts"], "app": dom, "verb": "read",
+                                "obj": "selection", "_text": r["text_preview"]})
     finally:
         conn.close()
     actions.sort(key=lambda a: a["ts"])
+    link_transfers(actions)
+    return actions
+
+
+# --- read-here -> type-there ------------------------------------------------
+TRANSFER_WINDOW = 300.0   # seconds a read can influence a later write
+_TOKEN = re.compile(r"[a-z0-9@._-]{3,}")
+
+
+def _tokens(s):
+    return set(_TOKEN.findall((s or "").lower()))
+
+
+def _similar(src, dst):
+    """True if the written text plausibly came from the read text."""
+    a, b = (src or "").lower().strip(), (dst or "").lower().strip()
+    if len(a) < 4 or len(b) < 4:
+        return False
+    if a in b or b in a:               # verbatim carry (retyped exactly)
+        return True
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta or not tb:
+        return False
+    overlap = len(ta & tb) / min(len(ta), len(tb))
+    return overlap >= 0.6              # reworded but same entities
+
+
+def link_transfers(actions):
+    """Detect information carried between apps WITHOUT the clipboard.
+
+    Looking something up in app A and then typing it (verbatim or reworded)
+    into app B is a real hand-off, but leaves no clipboard trace. We match the
+    text of a read/copy against later writes and insert a synthetic 'carry'
+    step so the flow signature records the dependency.
+    """
+    sources = [a for a in actions if a.get("_text") and a["verb"] in ("read", "copy", "focus")]
+    if not sources:
+        return actions
+    inserts = []
+    for a in actions:
+        if a["verb"] != "input" or not a.get("_text"):
+            continue
+        for s in reversed(sources):
+            if s["ts"] >= a["ts"] or a["ts"] - s["ts"] > TRANSFER_WINDOW:
+                continue
+            if s.get("app") == a.get("app"):
+                continue               # same app: not a cross-app carry
+            if _similar(s["_text"], a["_text"]):
+                inserts.append({"ts": a["ts"] - 0.001, "app": a["app"], "verb": "carry",
+                                "obj": "from:" + str(s.get("app")), "_text": None})
+                break
+    if inserts:
+        actions.extend(inserts)
+        actions.sort(key=lambda x: x["ts"])
     return actions
 
 
@@ -189,7 +287,44 @@ def _steps(seg):
     return out
 
 
-def mine(db, review=False, top=25):
+# --- deterministic automatability scoring -----------------------------------
+# Repetition is ONE signal, not the gate. A sequence of concrete UI actions on a
+# reachable interface is automatable the first time we see it.
+ACTIONABLE = {"click": 12, "input": 14, "visit": 7, "copy": 8, "carry": 10, "read": 3, "focus": 1}
+
+
+def auto_score(steps, count):
+    """0-100 automatability from the step composition alone (no AI)."""
+    if not steps:
+        return 0, "no steps"
+    pts = sum(ACTIONABLE.get(v, 1) for (_a, v, _o) in steps)
+    concrete = sum(1 for (_a, v, _o) in steps if v in ("click", "input", "copy", "carry"))
+    apps = {a for (a, _v, _o) in steps}
+    web = sum(1 for a in apps if "." in a and not a.endswith("exe"))
+
+    score = min(60, pts)                          # substance of the actions
+    score += min(15, int(web / max(1, len(apps)) * 15))   # reachable interfaces
+    score += min(15, (count - 1) * 7)             # repetition boosts, never gates
+    if any(v == "carry" for (_a, v, _o) in steps):
+        score += 6                                # a real data hand-off
+    if concrete == 0:
+        score = min(score, 20)                    # focus-only: we can't see the work
+
+    reasons = []
+    if concrete:
+        reasons.append(f"{concrete} concrete action{'s' if concrete != 1 else ''}")
+    if web:
+        reasons.append("web interface" if web == len(apps) else "partly web")
+    else:
+        reasons.append("native GUI only")
+    if count >= 2:
+        reasons.append(f"seen {count}×")
+    if concrete == 0:
+        reasons.append("no in-app detail captured")
+    return max(0, min(100, score)), ", ".join(reasons)
+
+
+def mine(db, review=False, top=25, with_annotations=True, min_score=45):
     actions = load_actions(db)
     segments = segment(actions)
 
@@ -227,7 +362,11 @@ def mine(db, review=False, top=25):
         apps = list(dict.fromkeys(st[0] for st in sig))  # unique, in order
         avg = sum(durs) / len(durs) if durs else 0.0
         auto_name = (apps[0] + " (in-app)") if len(apps) == 1 else " → ".join(apps[:4])
+        d_score, d_reason = auto_score(sig, len(segs))
         flows.append({
+            "det_score": d_score,
+            "det_reason": d_reason,
+            "surfaced": (len(segs) >= 2) or (d_score >= min_score),
             "id": i,
             "sig": g["sigs"][0],
             "sigs": g["sigs"],
@@ -243,61 +382,163 @@ def mine(db, review=False, top=25):
             "last_seen": max(s[-1]["ts"] for s in segs),
         })
 
-    flows.sort(key=lambda f: (f["count"] >= 2, f["total_seconds"]), reverse=True)
-    flows = flows[:top]
+    # Layer cached AI annotations on top (never calls a model here).
+    annots = load_annotations(db) if with_annotations else {}
+    for f in flows:
+        a = annots.get(f["sig"])
+        if a:
+            f["review"] = {
+                "name": a.get("name"), "purpose": a.get("purpose"),
+                "automatability": a.get("auto"), "score": a.get("score"),
+                "reason": a.get("reason"), "variable_slots": a.get("slots") or [],
+                "coherent": a.get("coherent"),
+            }
 
-    result = {
+    # Rank by automatability: the AI score when present, else the deterministic
+    # one. Repetition and time cost break ties.
+    flows.sort(key=lambda f: (
+        (f.get("review") or {}).get("score") or f["det_score"],
+        f["count"],
+        f["total_seconds"]), reverse=True)
+
+    surfaced = [f for f in flows if f["surfaced"]][:top]
+    return {
         "generated_ts": None,   # stamped by caller if wanted
         "event_count": len(actions),
         "segment_count": len(segments),
+        "candidate_count": len(flows),
         "repeated_flow_count": sum(1 for f in flows if f["count"] >= 2),
-        "flows": flows,
-        "ai": None,
+        "annotated_count": sum(1 for f in surfaced if f.get("review")),
+        "ai_enabled": ai.enabled(),
+        "flows": surfaced,
+        "all_flows": flows[:top],
     }
-    if review:
-        result["ai"] = ai_review(flows)
-    return result
 
 
 # --- stage 2: AI review (BYOK, optional) ------------------------------------
-REVIEW_PROMPT = """You review a user's captured work to help automate repetitive tasks.
-A deterministic segmenter produced these candidate flows (steps are normalized:
-<n>/<id>/<email> are placeholders for values that vary between repetitions).
+REVIEW_PROMPT = """You analyse a knowledge worker's captured computer activity.
 
-For EACH flow id, decide:
-- name: a short human task name (e.g. "Create a Salesforce lead")
-- coherent: true if the steps look like ONE real task, false if mis-segmented
-- automatability: "auto" | "assist" | "skip"
-- reason: one short sentence
-- variable_slots: the parts that change between repetitions (list of short strings)
+A deterministic segmenter grouped raw events into candidate flows and counted how
+often each repeated. Steps are normalized: <n>, <id>, <email>, <date> are
+placeholders for values that CHANGE between repetitions. Apps are process names
+or web domains. Verbs: focus (window focused), copy (clipboard), visit (page),
+click (button/link), input (form field), read (text selected/read).
 
-Return ONLY strict JSON, no prose:
-{"flows":[{"id":0,"name":"...","coherent":true,"automatability":"auto","reason":"...","variable_slots":["..."]}]}
+For EACH flow id give:
+- name: short human task name, specific ("Create a Salesforce lead", not "web work")
+- purpose: one sentence on what the person is actually accomplishing and why
+- coherent: true if these steps are ONE real task; false if the segmenter merged
+  unrelated work or cut a task in half
+- automatability: "auto" (deterministic, scriptable end-to-end) | "assist" (needs
+  judgement; AI can draft) | "skip" (too variable or not worth automating)
+- score: 0-100 automatability. Weigh: same steps every time, stable inputs,
+  reachable interfaces (web/API easier than native GUI), low risk if wrong.
+  Irreversible sends/payments cap the score at 60.
+- reason: one short sentence justifying the score
+- variable_slots: the parts that change between runs (short strings)
+
+Return ONLY strict JSON, no prose or markdown:
+{"flows":[{"id":0,"name":"...","purpose":"...","coherent":true,"automatability":"auto","score":85,"reason":"...","variable_slots":["..."]}]}
 
 Candidate flows:
 """
 
 
-def ai_review(flows):
-    if not ai.available():
-        return {"reviewed": False, "reason": "No API key set — add your own key in Settings to enable AI review."}
-    payload = [{"id": f["id"], "count": f["count"], "steps": f["steps"]} for f in flows]
-    prompt = REVIEW_PROMPT + json.dumps(payload, indent=1)
+def _parse_json(raw):
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+    i, j = text.find("{"), text.rfind("}")
+    if i < 0 or j < 0:
+        raise ValueError("no JSON object in model reply")
+    return json.loads(text[i:j + 1])
+
+
+def annotate(db, min_count=2, force=False, limit=25):
+    """Run the AI pass over repeated flows and CACHE the result.
+
+    Deterministic mining is untouched by this; annotations are a separate table
+    layered on top. Only flows seen >= min_count are sent, and already-annotated
+    flows are skipped unless force=True — so this stays cheap.
+    """
+    if not ai.enabled():
+        return {"reviewed": False,
+                "reason": "AI is off. Turn it on in Settings and add your own API key."}
+
+    base = mine(db, top=200)
+    cached = load_annotations(db)
+    todo = [f for f in base["flows"]
+            if f["count"] >= min_count and (force or f["sig"] not in cached)][:limit]
+    if not todo:
+        return {"reviewed": True, "annotated": 0, "reason": "Nothing new to analyse."}
+
+    payload = [{"id": f["id"], "seen_times": f["count"],
+                "avg_seconds": f["avg_seconds"], "steps": f["steps"]} for f in todo]
+    model = config.load()["ai"].get("model") or config.default_model(config.load()["ai"].get("provider"))
     try:
-        raw = ai.generate(prompt, max_tokens=1500)
-        text = raw.strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-            text = text[text.find("{"):]
-        data = json.loads(text[text.find("{"):text.rfind("}") + 1])
-        by_id = {r["id"]: r for r in data.get("flows", [])}
-        for f in flows:
-            r = by_id.get(f["id"])
-            if r:
-                f["review"] = r
-        return {"reviewed": True, "count": len(by_id)}
+        data = _parse_json(ai.generate(REVIEW_PROMPT + json.dumps(payload, indent=1), max_tokens=2000))
     except Exception as e:
         return {"reviewed": False, "reason": f"AI review failed: {e}"}
+
+    by_id = {r.get("id"): r for r in data.get("flows", [])}
+    conn = sqlite3.connect(db)
+    n = 0
+    try:
+        ensure_annotations(conn)
+        for f in todo:
+            r = by_id.get(f["id"])
+            if not r:
+                continue
+            score = r.get("score")
+            try:
+                score = max(0, min(100, int(score)))
+            except (TypeError, ValueError):
+                score = None
+            conn.execute(
+                "INSERT OR REPLACE INTO flow_annotations "
+                "(sig,name,purpose,auto,score,reason,slots,coherent,model,ts) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (f["sig"], r.get("name"), r.get("purpose"),
+                 r.get("automatability") if r.get("automatability") in ("auto", "assist", "skip") else "assist",
+                 score, r.get("reason"), json.dumps(r.get("variable_slots") or []),
+                 1 if r.get("coherent", True) else 0, model, time.time()))
+            n += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"reviewed": True, "annotated": n, "model": model}
+
+
+def recent_log(db, limit=40):
+    """Every tracked action, newest first, with the sequence it belongs to.
+
+    This is what the live log in the UI renders: it shows that each raw action
+    is captured AND which end-to-end sequence it is being committed to.
+    """
+    actions = load_actions(db)
+    segs = segment(actions)
+    annots = load_annotations(db)
+
+    owner = {}          # id(action) -> (segment number, signature, name)
+    for i, seg in enumerate(segs, 1):
+        steps = _steps(seg)
+        if len(steps) < MIN_STEPS:
+            continue
+        h = sig_hash(tuple(steps))
+        score, _ = auto_score(tuple(steps), 1)
+        name = (annots.get(h) or {}).get("name")
+        for a in seg:
+            owner[id(a)] = (i, h, name, score)
+
+    rows = []
+    for a in actions[-limit:][::-1]:
+        if a["verb"] == "_idle":
+            rows.append({"ts": a["ts"], "verb": "idle", "app": None, "obj": "— session boundary —",
+                         "seq": None, "sig": None, "name": None, "score": None})
+            continue
+        seq, sig, name, score = owner.get(id(a), (None, None, None, None))
+        rows.append({"ts": a["ts"], "app": a.get("app"), "verb": a["verb"], "obj": a.get("obj"),
+                     "seq": seq, "sig": sig, "name": name, "score": score})
+    return {"rows": rows, "total_actions": len(actions), "sequences": len(segs)}
 
 
 def purge_flow(db, sig):
