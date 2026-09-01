@@ -1,0 +1,502 @@
+<title>What the Mapper Sees</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* Light palette is the complete set; dark redefines only tokens. */
+  :root {
+    --bg:        #F7F6F3;
+    --surface:   #FFFFFF;
+    --surface-2: #F1EFEA;
+    --line:      #E2DFD7;
+    --line-2:    #CFCABE;
+    --text:      #1A1A18;
+    --muted:     #5C5A54;
+    --faint:     #8A867C;
+    --accent:    #A87A12;
+    --accent-2:  #7A5807;
+    --accent-soft: rgba(168,122,18,0.10);
+    --ok:        #1F7A4D;
+    --ok-soft:   rgba(31,122,77,0.10);
+    --warn:      #9A6212;
+    --warn-soft: rgba(154,98,18,0.10);
+    --blind:     #A33B34;
+    --blind-soft:rgba(163,59,52,0.09);
+    --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #101216;
+      --surface:   #171A20;
+      --surface-2: #1D2128;
+      --line:      #282D36;
+      --line-2:    #3A404B;
+      --text:      #EDEBE6;
+      --muted:     #A2A79F;
+      --faint:     #6E7580;
+      --accent:    #E8B44A;
+      --accent-2:  #F5CE7E;
+      --accent-soft: rgba(232,180,74,0.13);
+      --ok:        #4FCB8E;
+      --ok-soft:   rgba(79,203,142,0.12);
+      --warn:      #E0A64A;
+      --warn-soft: rgba(224,166,74,0.12);
+      --blind:     #E5726A;
+      --blind-soft:rgba(229,114,106,0.12);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#101216; --surface:#171A20; --surface-2:#1D2128; --line:#282D36; --line-2:#3A404B;
+    --text:#EDEBE6; --muted:#A2A79F; --faint:#6E7580;
+    --accent:#E8B44A; --accent-2:#F5CE7E; --accent-soft:rgba(232,180,74,0.13);
+    --ok:#4FCB8E; --ok-soft:rgba(79,203,142,0.12);
+    --warn:#E0A64A; --warn-soft:rgba(224,166,74,0.12);
+    --blind:#E5726A; --blind-soft:rgba(229,114,106,0.12);
+  }
+  :root[data-theme="light"] {
+    --bg:#F7F6F3; --surface:#FFFFFF; --surface-2:#F1EFEA; --line:#E2DFD7; --line-2:#CFCABE;
+    --text:#1A1A18; --muted:#5C5A54; --faint:#8A867C;
+    --accent:#A87A12; --accent-2:#7A5807; --accent-soft:rgba(168,122,18,0.10);
+    --ok:#1F7A4D; --ok-soft:rgba(31,122,77,0.10);
+    --warn:#9A6212; --warn-soft:rgba(154,98,18,0.10);
+    --blind:#A33B34; --blind-soft:rgba(163,59,52,0.09);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 56px 24px 96px; }
+  .mono { font-family: var(--mono); }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 4.6vw, 46px);
+    line-height: 1.12; letter-spacing: -.02em; margin: 10px 0 14px; text-wrap: balance;
+  }
+  .lede { font-size: 18px; color: var(--muted); max-width: 62ch; }
+  h2 {
+    font-family: var(--serif); font-weight: 600; font-size: 25px; letter-spacing: -.015em;
+    margin: 0 0 6px; text-wrap: balance;
+  }
+  h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  p { max-width: 68ch; }
+  section { margin-top: 54px; }
+  .sec-head { border-top: 1px solid var(--line); padding-top: 18px; margin-bottom: 22px; }
+  .sec-head .eyebrow { display: block; margin-bottom: 8px; }
+  .sec-head p { color: var(--muted); margin: 6px 0 0; font-size: 15px; }
+
+  /* coverage chips */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono);
+    font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 4px; border: 1px solid; white-space: nowrap;
+  }
+  .chip.full  { color: var(--ok);    background: var(--ok-soft);    border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+  .chip.part  { color: var(--warn);  background: var(--warn-soft);  border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+  .chip.blind { color: var(--blind); background: var(--blind-soft); border-color: color-mix(in srgb, var(--blind) 35%, transparent); }
+
+  /* summary stats */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px;
+    background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-top: 26px; }
+  .stat { background: var(--surface); padding: 16px 18px; }
+  .stat .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .stat .v { font-family: var(--serif); font-size: 30px; font-weight: 600; margin-top: 4px; letter-spacing: -.02em; }
+  .stat .v small { font-family: var(--sans); font-size: 13px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+
+  /* verb table */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--faint); font-weight: 500;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 11px 16px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+  td.verb { font-family: var(--mono); font-weight: 500; color: var(--accent); white-space: nowrap; }
+  td.strong { color: var(--text); }
+
+  /* workflow trace */
+  .trace { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }
+  .step { display: grid; grid-template-columns: 34px 1fr; gap: 16px; position: relative; padding-bottom: 20px; }
+  .step:not(:last-child)::before {
+    content: ""; position: absolute; left: 16.5px; top: 30px; bottom: 0; width: 1px; background: var(--line-2);
+  }
+  .step .num {
+    width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    font-family: var(--mono); font-size: 12px; font-weight: 500; z-index: 1;
+    background: var(--surface); border: 1px solid var(--line-2); color: var(--muted);
+  }
+  .step.full .num  { border-color: var(--ok);    color: var(--ok); }
+  .step.part .num  { border-color: var(--warn);  color: var(--warn); }
+  .step.blind .num { border-color: var(--blind); color: var(--blind); }
+  .step .body { padding-top: 4px; }
+  .step .act { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .step .act h3 { margin: 0; }
+  .step .got { font-family: var(--mono); font-size: 12.5px; margin-top: 7px; color: var(--muted); overflow-wrap: anywhere; }
+  .step .got b { color: var(--text); font-weight: 500; }
+  .step .miss { font-size: 13.5px; color: var(--blind); margin-top: 5px; }
+
+  /* callout */
+  .callout {
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    background: var(--surface); border-radius: 0 10px 10px 0; padding: 18px 20px; margin-top: 22px;
+  }
+  .callout h3 { font-family: var(--serif); font-size: 17px; margin-bottom: 6px; }
+  .callout p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  /* before / after */
+  .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 22px; }
+  .ba .card { border: 1px solid var(--line); border-radius: 10px; padding: 18px; background: var(--surface); }
+  .ba .card.bad { border-color: color-mix(in srgb, var(--blind) 30%, var(--line)); }
+  .ba .card.good { border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+  .ba .card .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .ba .card .big { font-family: var(--serif); font-size: 22px; font-weight: 600; margin: 8px 0 4px; letter-spacing: -.01em; }
+  .ba .card.bad .big { color: var(--blind); }
+  .ba .card.good .big { color: var(--ok); }
+  .ba .card ul { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
+  .ba .card li { margin-bottom: 3px; }
+
+  /* rules list */
+  .rules { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+  .rule { display: grid; grid-template-columns: 30px 1fr; gap: 14px; align-items: start;
+    border: 1px solid var(--line); border-radius: 10px; padding: 15px 17px; background: var(--surface); }
+  .rule .r { font-family: var(--mono); font-size: 12px; color: var(--accent); padding-top: 2px; }
+  .rule p { margin: 4px 0 0; font-size: 14.5px; color: var(--muted); }
+
+  code {
+    font-family: var(--mono); font-size: .88em; background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--text);
+  }
+  .footer { margin-top: 60px; border-top: 1px solid var(--line); padding-top: 20px;
+    font-family: var(--mono); font-size: 12px; color: var(--faint); }
+  @media (max-width: 720px) {
+    .ba { grid-template-columns: 1fr; }
+    .wrap { padding: 36px 18px 64px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">workflow-mapper · detection method</span>
+    <h1>What the mapper sees</h1>
+    <p class="lede">A trace of one real daily workflow — bank report → Excel → PDF → reference sheets → customer model → Word → email — through the actual detection pipeline, showing exactly what is captured, what is inferred, and what is still invisible.</p>
+
+    <div class="stats">
+      <div class="stat"><div class="k">Actions logged</div><div class="v tnum">54</div></div>
+      <div class="stat"><div class="k">Sequences cut</div><div class="v tnum">3 <small>one per day</small></div></div>
+      <div class="stat"><div class="k">Flow detected</div><div class="v tnum">1 <small>seen 3×</small></div></div>
+      <div class="stat"><div class="k">Automatability</div><div class="v tnum">77 <small>/ 100</small></div></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Part one</span>
+      <h2>The seven things we can detect</h2>
+      <p>Every captured action reduces to one of these. Everything downstream — sequencing, scoring, the graph — is built only from this vocabulary.</p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Verb</th><th>Where it comes from</th><th>What it records</th><th>Coverage</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="verb">focus</td><td class="strong">Any app (OS)</td><td>App name + window title — which usually carries the <em>file name</em> or email subject</td><td><span class="chip full">All apps</span></td></tr>
+          <tr><td class="verb">copy</td><td class="strong">Any app (OS)</td><td>Clipboard type (text / image / files), length, hash, 80-char preview</td><td><span class="chip full">All apps</span></td></tr>
+          <tr><td class="verb">visit</td><td class="strong">Chrome extension</td><td>Domain + URL path (query string stripped)</td><td><span class="chip full">Web only</span></td></tr>
+          <tr><td class="verb">click</td><td class="strong">Chrome extension</td><td>The button or link label that was clicked</td><td><span class="chip full">Web only</span></td></tr>
+          <tr><td class="verb">input</td><td class="strong">Chrome extension</td><td>Which form field was filled (name, not the secret value)</td><td><span class="chip full">Web only</span></td></tr>
+          <tr><td class="verb">read</td><td class="strong">Chrome extension</td><td>Text selected on a page — the “source” half of a hand-off</td><td><span class="chip full">Web only</span></td></tr>
+          <tr><td class="verb">carry</td><td class="strong">Inferred</td><td>Synthetic step inserted when text read in app A reappears in text typed into app B</td><td><span class="chip part">Inferred</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <h3>The asymmetry that matters</h3>
+      <p>Inside a <strong>web app</strong> we see individual clicks and fields — real in-app steps. Inside a <strong>native app</strong> (Excel, Word, Acrobat) we currently see only the window title. That single fact explains almost every gap below.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Part two · your workflow, traced</span>
+      <h2>The insurance report, step by step</h2>
+      <p>Simulated exactly as the sensors would record it, then run through the real pipeline. Green means captured, amber means partially captured, red means invisible today.</p>
+    </div>
+
+    <div class="trace">
+
+      <div class="step full">
+        <div class="num">1</div>
+        <div class="body">
+          <div class="act"><h3>Open the bank's email</h3><span class="chip full">captured</span></div>
+          <div class="got"><b>visit</b> mail.google.com /mail/#inbox · <b>click</b> “Daily Insurance Report”</div>
+        </div>
+      </div>
+
+      <div class="step part">
+        <div class="num">2</div>
+        <div class="body">
+          <div class="act"><h3>Download the attachment</h3><span class="chip part">partial</span></div>
+          <div class="got"><b>click</b> “insurance_report.xlsx”</div>
+          <div class="miss">We see the click, not the file landing on disk — no file-watch sensor yet, so the download isn't linked to the file later opened.</div>
+        </div>
+      </div>
+
+      <div class="step full">
+        <div class="num">3</div>
+        <div class="body">
+          <div class="act"><h3>Open it in Excel</h3><span class="chip full">captured</span></div>
+          <div class="got"><b>focus</b> excel · <code>insurance_report_&lt;date&gt;.xlsx</code></div>
+          <div class="miss" style="color:var(--muted)">The date normalizes to a placeholder, so the same task on different days collapses into one flow.</div>
+        </div>
+      </div>
+
+      <div class="step blind">
+        <div class="num">4</div>
+        <div class="body">
+          <div class="act"><h3>Formatting changes in Excel</h3><span class="chip blind">invisible</span></div>
+          <div class="miss">Column widths, headers, filters, styling — none of it is recorded. The window title doesn't change while you edit, so this step produces zero events.</div>
+        </div>
+      </div>
+
+      <div class="step part">
+        <div class="num">5</div>
+        <div class="body">
+          <div class="act"><h3>Open the PDF instructions</h3><span class="chip part">partial</span></div>
+          <div class="got"><b>focus</b> acrobat · <code>report_prep_instructions.pdf</code></div>
+          <div class="miss">We know you opened it and roughly how long you stayed. We don't know which instructions you read — no page, scroll, or selection signal in a PDF reader.</div>
+        </div>
+      </div>
+
+      <div class="step blind">
+        <div class="num">6</div>
+        <div class="body">
+          <div class="act"><h3>Additional calculations</h3><span class="chip blind">invisible</span></div>
+          <div class="miss">Formulas entered, ranges computed, values derived — all invisible for the same reason as step 4.</div>
+        </div>
+      </div>
+
+      <div class="step full">
+        <div class="num">7</div>
+        <div class="body">
+          <div class="act"><h3>Open the customer reference sheet</h3><span class="chip full">captured</span></div>
+          <div class="got"><b>focus</b> excel · <code>customer_reference_master.xlsx</code></div>
+          <div class="miss" style="color:var(--muted)">Switching workbooks <em>does</em> change the title, so we reliably see which files you moved between — a genuinely useful signal.</div>
+        </div>
+      </div>
+
+      <div class="step blind">
+        <div class="num">8</div>
+        <div class="body">
+          <div class="act"><h3>Ctrl+F to match a record</h3><span class="chip blind">invisible</span></div>
+          <div class="miss">The search term, the matched row, and the customer you landed on are all unrecorded. This is the single most valuable missing signal in your workflow — it's the actual join key between the files.</div>
+        </div>
+      </div>
+
+      <div class="step blind">
+        <div class="num">9</div>
+        <div class="body">
+          <div class="act"><h3>Search the Word document</h3><span class="chip blind">invisible</span></div>
+          <div class="got"><b>focus</b> winword · <code>policy_notes.docx</code></div>
+          <div class="miss">Same as above: we see the document, not the search or the passage found.</div>
+        </div>
+      </div>
+
+      <div class="step full">
+        <div class="num">10</div>
+        <div class="body">
+          <div class="act"><h3>Copy the individual's details</h3><span class="chip full">captured</span></div>
+          <div class="got"><b>copy</b> text · “Policyholder 44821 Ramesh Kapoor premium 1450”</div>
+          <div class="miss" style="color:var(--muted)">The clipboard is our strongest hand-off signal — it proves these two apps are one task, and shows what data moved.</div>
+        </div>
+      </div>
+
+      <div class="step part">
+        <div class="num">11</div>
+        <div class="body">
+          <div class="act"><h3>Update the customer model</h3><span class="chip part">partial</span></div>
+          <div class="got"><b>focus</b> excel · <code>customer_model_v4.xlsx</code></div>
+          <div class="miss">We know the model was opened right after the copy — so an update is strongly implied — but not which cell changed or to what.</div>
+        </div>
+      </div>
+
+      <div class="step full">
+        <div class="num">12</div>
+        <div class="body">
+          <div class="act"><h3>Screenshot into Word</h3><span class="chip full">captured</span></div>
+          <div class="got"><b>focus</b> snippingtool · <b>copy</b> image · <b>focus</b> winword <code>summary.docx</code></div>
+          <div class="miss" style="color:var(--muted)">An image hitting the clipboard followed by a Word focus is an unambiguous “screenshot pasted into a document” pattern.</div>
+        </div>
+      </div>
+
+      <div class="step full">
+        <div class="num">13</div>
+        <div class="body">
+          <div class="act"><h3>Email it to your boss</h3><span class="chip full">captured</span></div>
+          <div class="got"><b>input</b> field:to · <b>input</b> field:subjectbox · <b>click</b> “Send”</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="callout">
+      <h3>Net result</h3>
+      <p>The pipeline reconstructs the full <em>skeleton</em> — every app, every file, the order, the hand-offs, the send — as a single flow scoring 77/100. What it misses is the <em>substance</em> inside Excel, Word and the PDF: the formatting, the formulas, and above all the searches that join the files together.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Part three</span>
+      <h2>When does a flow end?</h2>
+      <p>This trace exposed a real bug, now fixed. It's worth understanding because it's the rule that decides what "end-to-end" even means.</p>
+    </div>
+
+    <div class="ba">
+      <div class="card bad">
+        <div class="lbl">Before — split on a 45s event gap</div>
+        <div class="big">4 fragments</div>
+        <ul>
+          <li>mail → excel (score 53)</li>
+          <li>mail in-app (76)</li>
+          <li>snippingtool → word (24)</li>
+          <li>word → excel (23)</li>
+        </ul>
+        <p style="font-size:13.5px;color:var(--muted);margin-top:10px">Reading the PDF for five minutes looked like the task ending.</p>
+      </div>
+      <div class="card good">
+        <div class="lbl">After — split on real idle</div>
+        <div class="big">1 flow, seen 3×</div>
+        <ul>
+          <li>5 apps, 17 steps, score 77</li>
+          <li>mail → excel → acrobat → word</li>
+        </ul>
+        <p style="font-size:13.5px;color:var(--muted);margin-top:10px">One coherent daily workflow, recognised as the same task across three days.</p>
+      </div>
+    </div>
+
+    <div class="rules">
+      <div class="rule">
+        <span class="r">1</span>
+        <div><h3>Real idle is the boundary</h3>
+        <p>The logger tracks actual keyboard and mouse input. After 60 seconds with none, it writes an <code>idle_start</code> — that is a person stopping, and it ends the flow. Long pauses spent reading do <em>not</em> end it, because there is still input.</p></div>
+      </div>
+      <div class="rule">
+        <span class="r">2</span>
+        <div><h3>A 15-minute event gap is only a safety net</h3>
+        <p>Used when idle wasn't recorded — an app crashed, the machine slept. Deliberately long, so it never cuts a working session.</p></div>
+      </div>
+      <div class="rule">
+        <span class="r">3</span>
+        <div><h3>One hour is the hard cap</h3>
+        <p>A runaway guard so a single flow can't swallow an entire day if both signals fail.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Part four</span>
+      <h2>Where screenshots belong — and where they don't</h2>
+      <p>Screenshots are the fallback for apps we can't ask politely. They're the heaviest, most sensitive sensor, so they should be the last resort, not the default.</p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Surface</th><th>Better sensor available?</th><th>Screenshot policy</th></tr></thead>
+        <tbody>
+          <tr><td class="strong">Web apps<br><span style="color:var(--faint);font-size:12.5px">Salesforce, Gmail, internal tools</span></td><td>Yes — the extension already gives semantic clicks and fields</td><td><span class="chip blind">Never</span> Pixels would be strictly worse than the events we already have.</td></tr>
+          <tr><td class="strong">Excel / Word / Outlook</td><td>Yes — COM and UI Automation expose ranges, formulas, commands</td><td><span class="chip part">Only as backup</span> Instrument properly; use pixels only if the API path fails.</td></tr>
+          <tr><td class="strong">PDF readers, legacy and proprietary desktop tools</td><td>No — no scriptable surface at all</td><td><span class="chip full">Yes</span> This is the genuine use case: it's the only way to know what was on screen.</td></tr>
+          <tr><td class="strong">Password managers, banking, anything unlisted</td><td>—</td><td><span class="chip blind">Never</span> Not on the allowlist, never captured.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <h3>Trigger on change, not on a clock</h3>
+      <p>Capturing every 30 seconds produces mostly duplicates. The right trigger is a <em>state change</em>: the focused window changed, or the image's perceptual hash moved beyond a threshold. Each shot is reduced to an 8×8 hash so identical screens are detected deterministically — the same dialog on Monday and Tuesday hashes the same, with no AI involved. <strong>Status today:</strong> capture is built and off by default, but still timer-based, and the mining pipeline does not yet read the screenshots table.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Part five</span>
+      <h2>Where AI sits</h2>
+      <p>There is an explicit on/off switch. Everything above this line is deterministic and unchanged when AI is off.</p>
+    </div>
+
+    <div class="ba">
+      <div class="card">
+        <div class="lbl">AI off — the default</div>
+        <div class="big" style="color:var(--text)">Fully deterministic</div>
+        <ul>
+          <li>Capture, action log, sequencing</li>
+          <li>Normalization and clustering</li>
+          <li>Automatability score 0–100</li>
+          <li>Graph, rankings, admin console</li>
+        </ul>
+        <p style="font-size:13.5px;color:var(--muted);margin-top:10px">No account, no key, no cost, no network.</p>
+      </div>
+      <div class="card">
+        <div class="lbl">AI on — layered on top</div>
+        <div class="big" style="color:var(--accent)">Interpretation only</div>
+        <ul>
+          <li>Names the task in human terms</li>
+          <li>Explains what it accomplishes</li>
+          <li>Judges whether the boundaries are right</li>
+          <li>Sharpens the automatability ranking</li>
+        </ul>
+        <p style="font-size:13.5px;color:var(--muted);margin-top:10px">Small model, runs on demand, cached per flow. Your own API key.</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <h3>Why AI reads flows rather than events</h3>
+      <p>By the time the model sees anything, the work is already done: actions captured, sequences cut, repeats collapsed, scores assigned. The model receives a compact list of normalized flows — not a raw event firehose — so it's cheap, cacheable, and swappable. It also gets the one job deterministic rules do badly: judging whether a sequence is really <em>one task</em>, which is exactly the failure mode Part three describes.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Part six</span>
+      <h2>What it takes to capture your workflow in full</h2>
+      <p>Three sensors close every red row in the trace. In priority order for this specific workflow.</p>
+    </div>
+
+    <div class="rules">
+      <div class="rule">
+        <span class="r">A</span>
+        <div><h3>Excel / Office automation — closes steps 4, 6, 8, 11</h3>
+        <p>Excel's COM event model reports the exact range edited, the formula entered, the sheet and workbook, and every save — across all open workbooks at once. Crucially, the same interface that <em>records</em> these steps can <em>replay</em> them, so building the sensor is also building the front half of the automation.</p></div>
+      </div>
+      <div class="rule">
+        <span class="r">B</span>
+        <div><h3>UI Automation — closes steps 8, 9 and Word generally</h3>
+        <p>The Windows accessibility layer reports which control was invoked and which dialog appeared — including the Find dialog and its search term. That search term is the join key between your report and the reference sheet, so it's the highest-value single field in the whole workflow.</p></div>
+      </div>
+      <div class="rule">
+        <span class="r">C</span>
+        <div><h3>File watching — closes step 2</h3>
+        <p>Watching Downloads and your working folders links “clicked the attachment” to “opened this exact file”, and connects each file to the one saved from it. Cheapest of the three to build.</p></div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <h3>The honest bottom line</h3>
+      <p>Today this workflow is detected as <strong>one correct end-to-end flow with the right shape</strong> — all five apps, the files, the hand-offs, the send — but with the in-app substance missing. That's enough to say “you do this every day and it looks automatable.” It is <em>not</em> yet enough to generate the automation, because the rules live in the formatting, the formulas, and the searches we can't see.</p>
+    </div>
+  </section>
+
+  <div class="footer">workflow-mapper · detection method as implemented · every figure on this page comes from running the real pipeline</div>
+</div>
