@@ -29,6 +29,7 @@ from collections import defaultdict
 
 import ai
 import config
+import interpret
 
 # Admin-authored rules that override the automatic clustering.
 RULES_SCHEMA = """
@@ -401,7 +402,11 @@ def mine(db, review=False, top=25, with_annotations=True, min_score=45):
         avg = sum(durs) / len(durs) if durs else 0.0
         auto_name = (apps[0] + " (in-app)") if len(apps) == 1 else " → ".join(apps[:4])
         d_score, d_reason = auto_score(sig, len(segs))
+        raw_steps = [{"app": a, "verb": v, "obj": o} for (a, v, o) in sig]
+        summary = interpret.summarize(raw_steps)
         flows.append({
+            "interpreted": interpret.describe_steps(raw_steps),
+            "summary": summary,
             "det_score": d_score,
             "det_reason": d_reason,
             "surfaced": (len(segs) >= 2) or (d_score >= min_score),
@@ -674,3 +679,98 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def flow_detail(db, sig, max_occurrences=5):
+    """Everything needed to inspect one flow: interpreted steps + raw logs.
+
+    Powers the drill-down view: what the person actually did, as discrete
+    understood steps, plus the underlying end-to-end action log per occurrence.
+    """
+    actions = load_actions(db)
+    segs = segment(actions)
+    occurrences, steps = [], None
+    for seg in segs:
+        s = _steps(seg)
+        if len(s) < MIN_STEPS or sig_hash(tuple(s)) != sig:
+            continue
+        if steps is None:
+            steps = [{"app": a, "verb": v, "obj": o} for (a, v, o) in s]
+        occurrences.append({
+            "started": seg[0]["ts"],
+            "ended": seg[-1]["ts"],
+            "seconds": round(seg[-1]["ts"] - seg[0]["ts"], 1),
+            "log": [{"ts": a["ts"], "app": a.get("app"), "verb": a["verb"],
+                     "obj": a.get("obj")} for a in seg],
+        })
+    if steps is None:
+        return {"found": False, "sig": sig}
+
+    occurrences.sort(key=lambda o: -o["started"])
+    annots = load_annotations(db).get(sig) or {}
+    score, reason = auto_score(tuple((s["app"], s["verb"], s["obj"]) for s in steps),
+                               len(occurrences))
+    return {
+        "found": True, "sig": sig,
+        "name": annots.get("name") or " → ".join(
+            list(dict.fromkeys(s["app"] for s in steps))[:4]),
+        "purpose": annots.get("purpose"),
+        "count": len(occurrences),
+        "det_score": score, "det_reason": reason,
+        "review": ({"name": annots.get("name"), "purpose": annots.get("purpose"),
+                    "automatability": annots.get("auto"), "score": annots.get("score"),
+                    "reason": annots.get("reason"),
+                    "variable_slots": annots.get("slots") or []} if annots else None),
+        "steps": steps,
+        "interpreted": interpret.describe_steps(steps),
+        "summary": interpret.summarize(steps),
+        "occurrences": occurrences[:max_occurrences],
+    }
+
+
+AUTOMATION_PROMPT = """You design desktop/web automations.
+
+Below is one repeatedly-observed workflow captured from a person's computer.
+Steps are normalized (<n>, <id>, <email>, <date> are values that vary per run).
+"category" is a deterministic classification of each step.
+
+Produce a concrete automation plan:
+- approach: one paragraph on how you would automate this end to end
+- trigger: what should start it automatically
+- steps: ordered list of {action, how} where "how" names the concrete mechanism
+  (an app API, browser automation, Excel COM/macro, file watcher, etc.)
+- inputs: the variable values each run needs
+- blockers: anything that prevents full automation, or is risky to automate
+- human_checkpoints: points that should still require a person to confirm
+- confidence: 0-100 that this can be automated reliably
+
+Return ONLY strict JSON:
+{"approach":"...","trigger":"...","steps":[{"action":"...","how":"..."}],
+ "inputs":["..."],"blockers":["..."],"human_checkpoints":["..."],"confidence":70}
+
+Workflow:
+"""
+
+
+def suggest_automation(db, sig):
+    """AI-generated automation plan for one flow (BYOK, on demand)."""
+    if not ai.enabled():
+        return {"ok": False,
+                "reason": "AI is off. Turn it on in Settings and add your own API key."}
+    d = flow_detail(db, sig)
+    if not d.get("found"):
+        return {"ok": False, "reason": "Flow not found."}
+    payload = {
+        "name": d["name"], "seen_times": d["count"],
+        "avg_seconds": round(sum(o["seconds"] for o in d["occurrences"]) /
+                             max(1, len(d["occurrences"])), 1),
+        "steps": [{"app": s["app"], "verb": s["verb"], "obj": s["obj"],
+                   "category": i["category"]}
+                  for s, i in zip(d["steps"], d["interpreted"])],
+    }
+    try:
+        plan = _parse_json(ai.generate(AUTOMATION_PROMPT + json.dumps(payload, indent=1),
+                                       max_tokens=1600))
+        return {"ok": True, "plan": plan}
+    except Exception as e:
+        return {"ok": False, "reason": "Could not generate a plan: %s" % e}

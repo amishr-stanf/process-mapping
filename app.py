@@ -216,6 +216,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(data)
         if self.path.split("?")[0] == "/api/log":
             return self._json(mining.recent_log(DB, limit=40))
+        if self.path.split("?")[0] == "/api/flow":
+            from urllib.parse import parse_qs
+            sig = (parse_qs(self.path.partition("?")[2]).get("sig") or [""])[0]
+            if not sig:
+                return self._json({"error": "sig required"}, 400)
+            return self._json(mining.flow_detail(DB, sig))
         if self.path == "/api/identity":
             return self._json(identity.public())
         if self.path == "/api/export/preview":
@@ -284,6 +290,9 @@ class Handler(BaseHTTPRequestHandler):
                                    "folder": os.path.dirname(path)})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path == "/api/ai/automate":
+            b = self._read_json() or {}
+            return self._json(mining.suggest_automation(DB, b.get("sig")))
         if self.path == "/api/ai/review":
             # Explicit, user-initiated AI pass over already-detected flows.
             body = self._read_json() or {}
